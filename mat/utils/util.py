@@ -29,6 +29,7 @@ def mse_loss(e):
     return e**2/2
 
 def get_shape_from_obs_space(obs_space):
+    print(obs_space)
     if obs_space.__class__.__name__ == 'Box':
         obs_shape = obs_space.shape
     elif obs_space.__class__.__name__ == 'list':
@@ -38,7 +39,8 @@ def get_shape_from_obs_space(obs_space):
     return obs_shape
 
 def get_shape_from_act_space(act_space):
-    if act_space.__class__.__name__ == 'Discrete':
+    if act_space.__class__.__name__ == 'Discrete' or \
+        act_space.__class__.__name__ == 'Action_Space':
         act_shape = 1
     elif act_space.__class__.__name__ == "MultiDiscrete":
         act_shape = act_space.shape

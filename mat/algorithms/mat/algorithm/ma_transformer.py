@@ -7,6 +7,8 @@ from torch.distributions import Categorical
 from mat.algorithms.utils.util import check, init
 from mat.algorithms.utils.transformer_act import discrete_autoregreesive_act
 from mat.algorithms.utils.transformer_act import discrete_parallel_act
+from mat.algorithms.utils.transformer_act import semi_discrete_autoregreesive_act
+from mat.algorithms.utils.transformer_act import semi_discrete_parallel_act
 from mat.algorithms.utils.transformer_act import continuous_autoregreesive_act
 from mat.algorithms.utils.transformer_act import continuous_parallel_act
 
@@ -289,12 +291,17 @@ class MultiAgentTransformer(nn.Module):
         v_loc, obs_rep = self.encoder(state, obs)
         if self.action_type == "Discrete":
             output_action, output_action_log = discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
-                                                                           self.n_agent, self.action_dim, self.tpdv,
-                                                                           available_actions, deterministic)
+                                                                            self.n_agent, self.action_dim, self.tpdv,
+                                                                            available_actions, deterministic)
+        elif self.action_type == "Action_Space":
+            output_action,distri, output_action_log = discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
+                                                                            self.n_agent, self.action_dim, self.tpdv,
+                                                                            available_actions, deterministic)
+            
         else:
             output_action, output_action_log = continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
-                                                                             self.n_agent, self.action_dim, self.tpdv,
-                                                                             deterministic)
+                                                                            self.n_agent, self.action_dim, self.tpdv,
+                                                                            deterministic)
 
         return output_action, output_action_log, v_loc
 
