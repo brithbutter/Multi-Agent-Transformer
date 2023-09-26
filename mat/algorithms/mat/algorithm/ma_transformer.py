@@ -170,30 +170,31 @@ class Decoder(nn.Module):
             if self.share_actor:
                 print("mac_dec!!!!!")
                 self.mlp = nn.Sequential(nn.LayerNorm(obs_dim),
-                                         init_(nn.Linear(obs_dim, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
-                                         init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
-                                         init_(nn.Linear(n_embd, action_dim)))
+                                        init_(nn.Linear(obs_dim, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
+                                        init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
+                                        init_(nn.Linear(n_embd, action_dim)))
             else:
                 self.mlp = nn.ModuleList()
                 for n in range(n_agent):
                     actor = nn.Sequential(nn.LayerNorm(obs_dim),
-                                          init_(nn.Linear(obs_dim, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
-                                          init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
-                                          init_(nn.Linear(n_embd, action_dim)))
+                                        init_(nn.Linear(obs_dim, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
+                                        init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
+                                        init_(nn.Linear(n_embd, action_dim)))
                     self.mlp.append(actor)
         else:
             # self.agent_id_emb = nn.Parameter(torch.zeros(1, n_agent, n_embd))
-            if action_type == 'Discrete':
+            # This difference is because the output dim different from the discrete and continous representation.
+            if action_type == 'Discrete' or action_type == 'Semi_Discrete'  :
                 self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim + 1, n_embd, bias=False), activate=True),
                                                     nn.GELU())
             else:
                 self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim, n_embd), activate=True), nn.GELU())
             self.obs_encoder = nn.Sequential(nn.LayerNorm(obs_dim),
-                                             init_(nn.Linear(obs_dim, n_embd), activate=True), nn.GELU())
+                                            init_(nn.Linear(obs_dim, n_embd), activate=True), nn.GELU())
             self.ln = nn.LayerNorm(n_embd)
             self.blocks = nn.Sequential(*[DecodeBlock(n_embd, n_head, n_agent) for _ in range(n_block)])
             self.head = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
-                                      init_(nn.Linear(n_embd, action_dim)))
+                                    init_(nn.Linear(n_embd, action_dim)))
 
     def zero_std(self, device):
         if self.action_type != 'Discrete':
@@ -237,7 +238,7 @@ class MultiAgentTransformer(nn.Module):
         self.device = device
 
         # state unused
-        state_dim = 37
+        # state_dim = 37
 
         self.encoder = Encoder(state_dim, obs_dim, n_block, n_embd, n_head, n_agent, encode_state)
         self.decoder = Decoder(obs_dim, action_dim, n_block, n_embd, n_head, n_agent,
@@ -271,6 +272,9 @@ class MultiAgentTransformer(nn.Module):
             action = action.long()
             action_log, entropy = discrete_parallel_act(self.decoder, obs_rep, obs, action, batch_size,
                                                         self.n_agent, self.action_dim, self.tpdv, available_actions)
+        elif self.action_type == "Semi_Discrete":
+            action_log, entropy = semi_discrete_parallel_act(self.decoder, obs_rep, obs, action, batch_size,
+                                                        self.n_agent, self.action_dim, self.tpdv, available_actions)
         else:
             action_log, entropy = continuous_parallel_act(self.decoder, obs_rep, obs, action, batch_size,
                                                           self.n_agent, self.action_dim, self.tpdv)
@@ -293,8 +297,8 @@ class MultiAgentTransformer(nn.Module):
             output_action, output_action_log = discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                             self.n_agent, self.action_dim, self.tpdv,
                                                                             available_actions, deterministic)
-        elif self.action_type == "Action_Space":
-            output_action,distri, output_action_log = discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
+        elif self.action_type == "Semi_Discrete":
+            output_action, output_action_log = semi_discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                             self.n_agent, self.action_dim, self.tpdv,
                                                                             available_actions, deterministic)
             

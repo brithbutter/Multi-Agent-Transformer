@@ -26,12 +26,14 @@ class TransformerPolicy:
         self._use_policy_active_masks = args.use_policy_active_masks
         if act_space.__class__.__name__ == 'Box':
             self.action_type = 'Continuous'
+        elif act_space.__class__.__name__ == 'Action_Space':
+            self.action_type = 'Semi_Discrete'
         else:
             self.action_type = 'Discrete'
 
         self.obs_dim = get_shape_from_obs_space(obs_space)[0]
         self.share_obs_dim = get_shape_from_obs_space(cent_obs_space)[0]
-        if self.action_type == 'Discrete':
+        if self.action_type == 'Discrete' or self.action_type == 'Semi_Discrete':
             self.act_dim = act_space.n
             self.act_num = 1
         else:
