@@ -227,8 +227,8 @@ class Decoder(nn.Module):
 class MultiAgentTransformer(nn.Module):
 
     def __init__(self, state_dim, obs_dim, action_dim, n_agent,
-                 n_block, n_embd, n_head, encode_state=False, device=torch.device("cpu"),
-                 action_type='Discrete', dec_actor=False, share_actor=False):
+                n_block, n_embd, n_head, encode_state=False, device=torch.device("cpu"),
+                action_type='Discrete', dec_actor=False, share_actor=False,semi_index= -1):
         super(MultiAgentTransformer, self).__init__()
 
         self.n_agent = n_agent
@@ -236,13 +236,13 @@ class MultiAgentTransformer(nn.Module):
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.action_type = action_type
         self.device = device
-
+        self.semi_index = semi_index
         # state unused
         # state_dim = 37
 
         self.encoder = Encoder(state_dim, obs_dim, n_block, n_embd, n_head, n_agent, encode_state)
         self.decoder = Decoder(obs_dim, action_dim, n_block, n_embd, n_head, n_agent,
-                               self.action_type, dec_actor=dec_actor, share_actor=share_actor)
+                            self.action_type, dec_actor=dec_actor, share_actor=share_actor)
         self.to(device)
 
     def zero_std(self):
@@ -274,7 +274,7 @@ class MultiAgentTransformer(nn.Module):
                                                         self.n_agent, self.action_dim, self.tpdv, available_actions)
         elif self.action_type == "Semi_Discrete":
             action_log, entropy = semi_discrete_parallel_act(self.decoder, obs_rep, obs, action, batch_size,
-                                                        self.n_agent, self.action_dim, self.tpdv, available_actions)
+                                                        self.n_agent, self.action_dim, self.tpdv, available_actions,semi_index=self.semi_index)
         else:
             action_log, entropy = continuous_parallel_act(self.decoder, obs_rep, obs, action, batch_size,
                                                           self.n_agent, self.action_dim, self.tpdv)
@@ -300,7 +300,7 @@ class MultiAgentTransformer(nn.Module):
         elif self.action_type == "Semi_Discrete":
             output_action, output_action_log = semi_discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                             self.n_agent, self.action_dim, self.tpdv,
-                                                                            available_actions, deterministic)
+                                                                            available_actions, deterministic,semi_index=self.semi_index)
             
         else:
             output_action, output_action_log = continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,

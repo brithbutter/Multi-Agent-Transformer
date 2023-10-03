@@ -222,7 +222,7 @@ class MultiAgentDecoder(nn.Module):
 
     def __init__(self, state_dim, obs_dim, action_dim, n_agent,
                  n_block, n_embd, n_head, encode_state=False, device=torch.device("cpu"),
-                 action_type='Discrete', dec_actor=False, share_actor=False):
+                 action_type='Discrete', dec_actor=False, share_actor=False,semi_index= None):
         super(MultiAgentDecoder, self).__init__()
 
         self.n_agent = n_agent

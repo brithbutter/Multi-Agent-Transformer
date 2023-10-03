@@ -24,10 +24,15 @@ class TransformerPolicy:
         self.opti_eps = args.opti_eps
         self.weight_decay = args.weight_decay
         self._use_policy_active_masks = args.use_policy_active_masks
+        semi_index= None
         if act_space.__class__.__name__ == 'Box':
             self.action_type = 'Continuous'
         elif act_space.__class__.__name__ == 'Action_Space':
-            self.action_type = 'Semi_Discrete'
+            if act_space.semi_index != 0:
+                self.action_type = 'Semi_Discrete'
+                semi_index = act_space.semi_index
+            else:
+                self.action_type = 'Discrete'
         else:
             self.action_type = 'Discrete'
 
@@ -63,7 +68,7 @@ class TransformerPolicy:
                                n_block=args.n_block, n_embd=args.n_embd, n_head=args.n_head,
                                encode_state=args.encode_state, device=device,
                                action_type=self.action_type, dec_actor=args.dec_actor,
-                               share_actor=args.share_actor)
+                               share_actor=args.share_actor,semi_index= semi_index)
         if args.env_name == "hands":
             self.transformer.zero_std()
 
