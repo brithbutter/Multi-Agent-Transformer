@@ -75,12 +75,16 @@ class Runner(object):
             from mat.algorithms.mat.algorithm.happo_policy import HAPPO_Policy as Policy
             self.policy = []
             for agent_id in range(self.num_agents):
-                share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[agent_id]
+                if len(self.envs.observation_space)==1:
+                    index = 0
+                else:
+                    index = agent_id
+                share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[index]
                 # policy network
                 po = Policy(self.all_args,
-                            self.envs.observation_space[agent_id],
+                            self.envs.observation_space[index],
                             share_observation_space,
-                            self.envs.action_space[agent_id],
+                            self.envs.action_space[index],
                             device = self.device)
                 self.policy.append(po)
 
@@ -91,13 +95,31 @@ class Runner(object):
                 # algorithm
                 tr = TrainAlgo(self.all_args, self.policy[agent_id], device = self.device)
                 # buffer
-                share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[agent_id]
+                if len(self.envs.observation_space)==1:
+                    index = 0
+                else:
+                    index = agent_id
+                share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[index]
                 bu = SeparatedReplayBuffer(self.all_args,
-                                        self.envs.observation_space[agent_id],
+                                        self.envs.observation_space[index],
                                         share_observation_space,
-                                        self.envs.action_space[agent_id])
+                                        self.envs.action_space[index])
                 self.buffer.append(bu)
                 self.trainer.append(tr)
+        elif self.all_args.algorithm_name == "random":
+            from mat.algorithms.mat.algorithm.random_policy import Random_Policy as Policy
+            self.policy = Policy(self.all_args,
+                                self.envs.observation_space[0],
+                                share_observation_space,
+                                self.envs.action_space[0],
+                                self.num_agents,
+                                device=self.device)
+            self.buffer = SharedReplayBuffer(self.all_args,
+                                            self.num_agents,
+                                            self.envs.observation_space[0],
+                                            share_observation_space,
+                                            self.envs.action_space[0],
+                                            self.all_args.env_name)
         else:
             from mat.utils.shared_buffer import SharedReplayBuffer
             from mat.algorithms.mat.mat_trainer import MATTrainer as TrainAlgo
@@ -154,6 +176,8 @@ class Runner(object):
                                                                     self.buffer[agent_id].masks[-1])
                 next_value = _t2n(next_value)
             self.buffer[agent_id].compute_returns(next_value, self.trainer[agent_id].value_normalizer)
+        elif self.all_args.algorithm_name == "random":
+            pass
         else:
             self.trainer.prep_rollout()
             if self.buffer.available_actions is None:
@@ -220,6 +244,8 @@ class Runner(object):
                 train_infos.append(train_info)      
                 self.buffer[agent_id].after_update()
             return train_infos
+        if self.all_args.algorithm_name == "random":
+            return None
         else:
             self.trainer.prep_training()
             train_infos = self.trainer.train(self.buffer)      
