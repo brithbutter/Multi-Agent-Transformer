@@ -20,6 +20,7 @@ class Random_Policy:
 
     def __init__(self, args, obs_space, cent_obs_space, act_space,num_agents, device=torch.device("cpu")):
         self.device = device
+        self.act_space = act_space
         self.algorithm_name = args.algorithm_name
         self.lr = args.lr
         self.opti_eps = args.opti_eps
@@ -79,15 +80,29 @@ class Random_Policy:
         values = []
         actions = []
         action_log_probs = []
-        for i in range(self.num_agents):
-            if i> self.act_space.semi_index + self.num_agents:
-                action = random.uniform(0,1)
-            else:
-                index = random.randint(0,sum(available_actions[i]))
-                action = np.argwhere(np.array(available_actions[i])==1)[index,0]
-            actions.append(action)
-            values.append(0)
-            action_log_probs.append(0)
+        for j in range(available_actions.shape[0]):
+            thread_actions = []
+            thread_values = []
+            thread_action_log_probs = []
+            for i in range(self.num_agents):
+                if i> self.act_space.semi_index + self.num_agents:
+                    action = random.uniform(0,1)
+                else:
+                    # print(available_actions[i])
+                    index = random.randint(0,sum(available_actions[j,i])-1)
+                    action = np.argwhere(np.array(available_actions[j,i])==1)[index,0]
+                # thread_actions.append(action)
+                # thread_values.append(0)
+                # thread_action_log_probs.append(0) 
+                actions.append(action)
+                values.append(0)
+                action_log_probs.append(0) 
+            # actions.append(thread_actions)
+            # values.append(thread_values)
+            # action_log_probs.append(thread_action_log_probs)
+        values = np.array(values).reshape(-1,1)
+        actions = np.array(actions).reshape(-1,1)
+        action_log_probs = np.array(action_log_probs).reshape(-1,1)
 
         return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
     

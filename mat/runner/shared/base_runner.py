@@ -107,13 +107,16 @@ class Runner(object):
                 self.buffer.append(bu)
                 self.trainer.append(tr)
         elif self.all_args.algorithm_name == "random":
-            from mat.algorithms.mat.algorithm.random_policy import Random_Policy as Policy
+            from mat.algorithms.random.algorithm.random_policy import Random_Policy as Policy
+            from mat.algorithms.random.random_trainer import RandomTrainer as TrainAlgo
+            from mat.utils.shared_buffer import SharedReplayBuffer
             self.policy = Policy(self.all_args,
                                 self.envs.observation_space[0],
                                 share_observation_space,
                                 self.envs.action_space[0],
                                 self.num_agents,
                                 device=self.device)
+            self.trainer = TrainAlgo(self.all_args, self.policy, self.num_agents, device=self.device)
             self.buffer = SharedReplayBuffer(self.all_args,
                                             self.num_agents,
                                             self.envs.observation_space[0],
@@ -245,7 +248,8 @@ class Runner(object):
                 self.buffer[agent_id].after_update()
             return train_infos
         if self.all_args.algorithm_name == "random":
-            return None
+            train_infos = self.trainer.train(self.buffer)      
+            return train_infos
         else:
             self.trainer.prep_training()
             train_infos = self.trainer.train(self.buffer)      
@@ -264,6 +268,8 @@ class Runner(object):
                     torch.save(policy_actor.state_dict(), str(self.save_dir) + "/actor_agent" + str(agent_id) + ".pt")
                     policy_critic = self.trainer[agent_id].policy.critic
                     torch.save(policy_critic.state_dict(), str(self.save_dir) + "/critic_agent" + str(agent_id) + ".pt")
+        elif self.all_args.algorithm_name == "random":
+            pass
         else:
             self.policy.save(self.save_dir, episode)
 
