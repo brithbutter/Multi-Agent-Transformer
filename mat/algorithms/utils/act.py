@@ -22,6 +22,13 @@ class ACTLayer(nn.Module):
             if action_space.extra:
                 action_dim = 1
                 self.action_out = DiagGaussian(inputs_dim, action_dim, use_orthogonal, gain, args)
+            elif action_space.multi_discrete:
+                self.multi_discrete = True
+                action_dims = action_space.high - action_space.low + 1
+                self.action_outs = []
+                for action_dim in action_dims:
+                    self.action_outs.append(Categorical(inputs_dim, action_dim, use_orthogonal, gain))
+                self.action_outs = nn.ModuleList(self.action_outs)
             else:
                 action_dim = action_space.n
                 self.action_out = Categorical(inputs_dim, action_dim, use_orthogonal, gain)
