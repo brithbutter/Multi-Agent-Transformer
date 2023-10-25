@@ -42,8 +42,13 @@ class SeparatedReplayBuffer(object):
         self.value_preds = np.zeros((self.episode_length + 1, self.n_rollout_threads, 1), dtype=np.float32)
         self.returns = np.zeros((self.episode_length + 1, self.n_rollout_threads, 1), dtype=np.float32)
         
-        if act_space.__class__.__name__ == 'Discrete' or act_space.__class__.__name__ == 'Action_Space':
+        if act_space.__class__.__name__ == 'Discrete':
             self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, act_space.n), dtype=np.float32)
+        elif act_space.__class__.__name__ == 'Action_Space':
+            if act_space.multi_discrete:
+                self.available_actions = None
+            else:
+                self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, act_space.n), dtype=np.float32)
         else:
             self.available_actions = None
 
@@ -79,7 +84,7 @@ class SeparatedReplayBuffer(object):
             self.bad_masks[self.step + 1] = bad_masks.copy()
         if active_masks is not None:
             self.active_masks[self.step + 1] = active_masks.copy()
-        if available_actions is not None:
+        if self.available_actions is not None:
             self.available_actions[self.step + 1] = available_actions.copy()
 
         self.step = (self.step + 1) % self.episode_length
