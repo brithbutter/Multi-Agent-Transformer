@@ -106,6 +106,43 @@ class Runner(object):
                                         self.envs.action_space[index])
                 self.buffer.append(bu)
                 self.trainer.append(tr)
+        elif self.algorithm_name == "rmappo":
+            from mat.utils.separated_buffer import SeparatedReplayBuffer
+            from mat.algorithms.r_mappo.r_mappo import R_MAPPO as TrainAlgo
+            from mat.algorithms.r_mappo.rMAPPOPolicy import R_MAPPOPolicy as Policy
+            self.policy = []
+            for agent_id in range(self.num_agents):
+                if len(self.envs.observation_space)==1:
+                    index = 0
+                else:
+                    index = agent_id
+                share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[index]
+                # policy network
+                po = Policy(self.all_args,
+                            self.envs.observation_space[index],
+                            share_observation_space,
+                            self.envs.action_space[index],
+                            device = self.device)
+                self.policy.append(po)
+
+
+            self.trainer = []
+            self.buffer = []
+            for agent_id in range(self.num_agents):
+                # algorithm
+                tr = TrainAlgo(self.all_args, self.policy[agent_id], device = self.device)
+                # buffer
+                if len(self.envs.observation_space)==1:
+                    index = 0
+                else:
+                    index = agent_id
+                share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[index]
+                bu = SeparatedReplayBuffer(self.all_args,
+                                        self.envs.observation_space[index],
+                                        share_observation_space,
+                                        self.envs.action_space[index])
+                self.buffer.append(bu)
+                self.trainer.append(tr)
         elif self.all_args.algorithm_name == "random":
             from mat.algorithms.random.algorithm.random_policy import Random_Policy as Policy
             from mat.algorithms.random.random_trainer import RandomTrainer as TrainAlgo
@@ -171,7 +208,7 @@ class Runner(object):
     @torch.no_grad()
     def compute(self):
         """Calculate returns for the collected data."""
-        if self.all_args.algorithm_name == "happo":
+        if self.all_args.algorithm_name == "happo" or self.all_args.algorithm_name == "rmappo" :
             for agent_id in range(self.num_agents):
                 self.trainer[agent_id].prep_rollout()
                 next_value = self.trainer[agent_id].policy.get_values(self.buffer[agent_id].share_obs[-1], 
@@ -199,7 +236,7 @@ class Runner(object):
     
     def train(self):
         """Train policies with data in buffer. """
-        if self.all_args.algorithm_name == "happo":
+        if self.all_args.algorithm_name == "happo" or self.all_args.algorithm_name == "rmappo":
             train_infos = []
             # random update order
 
@@ -258,7 +295,7 @@ class Runner(object):
 
     def save(self, episode):
         """Save policy's actor and critic networks."""
-        if self.all_args.algorithm_name == "happo":
+        if self.all_args.algorithm_name == "happo" or self.algorithm_name == "rmappo":
             for agent_id in range(self.num_agents):
                 if self.use_single_network:
                     policy_model = self.trainer[agent_id].policy.model
@@ -275,7 +312,7 @@ class Runner(object):
 
     def restore(self, model_dir):
         """Restore policy's networks from a saved model."""
-        if self.all_args.algorithm_name == "happo":
+        if self.all_args.algorithm_name == "happo" or self.algorithm_name == "rmappo":
             for agent_id in range(self.num_agents):
                 if self.use_single_network:
                     policy_model_state_dict = torch.load(str(self.model_dir) + '/model_agent' + str(agent_id) + '.pt')
@@ -294,11 +331,15 @@ class Runner(object):
         :param train_infos: (dict) information about training update.
         :param total_num_steps: (int) total number of training env steps.
         """
-        if self.all_args.algorithm_name == "happo":
-            for agent_id in range(self.num_agents):
-                for k, v in train_infos[agent_id].items():
-                    agent_k = "agent%i/" % agent_id + k
-                    self.writter.add_scalars(agent_k, {agent_k: v}, total_num_steps)
+        if self.all_args.algorithm_name == "happo" or self.algorithm_name == "rmappo":
+            # for agent_id in range(self.num_agents):
+            #     for k, v in train_infos[agent_id].items():
+            #         agent_k = "agent%i/" % agent_id + k
+            #         self.writter.add_scalars(agent_k, {agent_k: v}, total_num_steps)
+        
+            for k, v in train_infos[0].items():
+                agent_k = "agent%i/" % 0 + k
+                self.writter.add_scalars(agent_k, {agent_k: v}, total_num_steps)
         else:
             for k, v in train_infos.items():
                 if self.use_wandb:
