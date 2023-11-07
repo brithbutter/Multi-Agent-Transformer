@@ -1,6 +1,7 @@
 import torch
 from .actor_critic import Actor, Critic
 from mat.utils.util import update_linear_schedule
+import numpy as np
 
 
 class HAPPO_Policy:
@@ -21,8 +22,10 @@ class HAPPO_Policy:
         self.critic_lr = args.critic_lr
         self.opti_eps = args.opti_eps
         self.weight_decay = args.weight_decay
-
-        self.obs_space = obs_space
+        if self.args.use_cent_local_observe:
+            self.obs_space = [obs_space[0] + cent_obs_space[0]]
+        else:
+            self.obs_space = obs_space
         self.share_obs_space = cent_obs_space
         self.act_space = act_space
 
@@ -71,6 +74,8 @@ class HAPPO_Policy:
         :return rnn_states_actor: (torch.Tensor) updated actor network RNN states.
         :return rnn_states_critic: (torch.Tensor) updated critic network RNN states.
         """
+        if self.args.use_cent_local_observe:
+            obs = np.concatenate((cent_obs,obs),axis=-1)
         actions, action_log_probs, rnn_states_actor = self.actor(obs,
                                                                  rnn_states_actor,
                                                                  masks,
@@ -111,6 +116,8 @@ class HAPPO_Policy:
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
 
+        if self.args.use_cent_local_observe:
+            obs = np.concatenate((cent_obs,obs),axis=-1)
         action_log_probs, dist_entropy = self.actor.evaluate_actions(obs,
                                                                 rnn_states_actor,
                                                                 action,
