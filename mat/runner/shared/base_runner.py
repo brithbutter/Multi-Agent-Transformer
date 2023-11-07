@@ -69,10 +69,14 @@ class Runner(object):
         # print("share_obs_space: ", self.envs.share_observation_space)
         # print("act_space: ", self.envs.action_space)
 
-        if self.all_args.algorithm_name == "happo":
+        if self.all_args.algorithm_name == "happo" or self.all_args.algorithm_name == "hatrpo":
             from mat.utils.separated_buffer import SeparatedReplayBuffer
-            from mat.algorithms.mat.happo_trainer import HAPPO as TrainAlgo
-            from mat.algorithms.mat.algorithm.happo_policy import HAPPO_Policy as Policy
+            if self.all_args.algorithm_name == "happo":
+                from mat.algorithms.mat.happo_trainer import HAPPO as TrainAlgo
+                from mat.algorithms.mat.algorithm.happo_policy import HAPPO_Policy as Policy
+            else:
+                from mat.algorithms.hatrpo.hatrpo_trainer import HATRPO as TrainAlgo
+                from mat.algorithms.hatrpo.hatrpo_policy import HATRPO_Policy as Policy
             self.policy = []
             for agent_id in range(self.num_agents):
                 if len(self.envs.observation_space)==1:
@@ -208,7 +212,7 @@ class Runner(object):
     @torch.no_grad()
     def compute(self):
         """Calculate returns for the collected data."""
-        if self.all_args.algorithm_name == "happo" or self.all_args.algorithm_name == "rmappo" :
+        if self.all_args.algorithm_name == "happo" or self.all_args.algorithm_name == "rmappo" or self.all_args.algorithm_name == "hatrpo":
             for agent_id in range(self.num_agents):
                 self.trainer[agent_id].prep_rollout()
                 next_value = self.trainer[agent_id].policy.get_values(self.buffer[agent_id].share_obs[-1], 
@@ -236,7 +240,7 @@ class Runner(object):
     
     def train(self):
         """Train policies with data in buffer. """
-        if self.all_args.algorithm_name == "happo" or self.all_args.algorithm_name == "rmappo":
+        if self.all_args.algorithm_name == "happo" or self.all_args.algorithm_name == "rmappo" or self.all_args.algorithm_name == "hatrpo":
             train_infos = []
             # random update order
 
@@ -274,7 +278,7 @@ class Runner(object):
                                                             available_actions,
                                                             self.buffer[agent_id].active_masks[:-1].reshape(-1, *self.buffer[agent_id].active_masks.shape[2:]))
                 train_info = self.trainer[agent_id].train(self.buffer[agent_id])
-
+            
                 if self.all_args.algorithm_name == "hatrpo":
                     new_actions_logprob, _, _, _, _ =self.trainer[agent_id].policy.actor.evaluate_actions(self.buffer[agent_id].obs[:-1].reshape(-1, *self.buffer[agent_id].obs.shape[2:]),
                                                         self.buffer[agent_id].rnn_states[0:1].reshape(-1, *self.buffer[agent_id].rnn_states.shape[2:]),
@@ -303,6 +307,7 @@ class Runner(object):
                 factor = factor*_t2n(torch.prod(torch.exp(new_actions_logprob-old_actions_logprob),dim=-1).reshape(self.episode_length,self.n_rollout_threads,1))
                 train_infos.append(train_info)      
                 self.buffer[agent_id].after_update()
+            
             return train_infos
         if self.all_args.algorithm_name == "random":
             train_infos = self.trainer.train(self.buffer)      
@@ -315,7 +320,7 @@ class Runner(object):
 
     def save(self, episode):
         """Save policy's actor and critic networks."""
-        if self.all_args.algorithm_name == "happo" or self.algorithm_name == "rmappo":
+        if self.all_args.algorithm_name == "happo" or self.algorithm_name == "rmappo" or self.all_args.algorithm_name == "hatrpo":
             for agent_id in range(self.num_agents):
                 if self.use_single_network:
                     policy_model = self.trainer[agent_id].policy.model
@@ -332,7 +337,7 @@ class Runner(object):
 
     def restore(self, model_dir):
         """Restore policy's networks from a saved model."""
-        if self.all_args.algorithm_name == "happo" or self.algorithm_name == "rmappo":
+        if self.all_args.algorithm_name == "happo" or self.algorithm_name == "rmappo" or self.all_args.algorithm_name == "hatrpo":
             for agent_id in range(self.num_agents):
                 if self.use_single_network:
                     policy_model_state_dict = torch.load(str(self.model_dir) + '/model_agent' + str(agent_id) + '.pt')
@@ -351,7 +356,7 @@ class Runner(object):
         :param train_infos: (dict) information about training update.
         :param total_num_steps: (int) total number of training env steps.
         """
-        if self.all_args.algorithm_name == "happo" or self.algorithm_name == "rmappo":
+        if self.all_args.algorithm_name == "happo" or self.algorithm_name == "rmappo" or self.all_args.algorithm_name == "hatrpo":
             # for agent_id in range(self.num_agents):
             #     for k, v in train_infos[agent_id].items():
             #         agent_k = "agent%i/" % agent_id + k

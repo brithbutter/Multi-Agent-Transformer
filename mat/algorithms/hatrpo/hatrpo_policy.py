@@ -1,16 +1,15 @@
 import torch
 from mat.algorithms.actor_critic import Actor, Critic
 from mat.utils.util import update_linear_schedule
-import numpy as np
 
 
-class HAPPO_Policy:
+class HATRPO_Policy:
     """
-    HAPPO Policy  class. Wraps actor and critic networks to compute actions and value function predictions.
+    HATRPO Policy  class. Wraps actor and critic networks to compute actions and value function predictions.
 
     :param args: (argparse.Namespace) arguments containing relevant model and policy information.
     :param obs_space: (gym.Space) observation space.
-    :param cent_obs_space: (gym.Space) value function input space (centralized input for HAPPO, decentralized for IPPO).
+    :param cent_obs_space: (gym.Space) value function input space .
     :param action_space: (gym.Space) action space.
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
@@ -22,10 +21,8 @@ class HAPPO_Policy:
         self.critic_lr = args.critic_lr
         self.opti_eps = args.opti_eps
         self.weight_decay = args.weight_decay
-        if self.args.use_cent_local_observe:
-            self.obs_space = [obs_space[0] + cent_obs_space[0]]
-        else:
-            self.obs_space = obs_space
+
+        self.obs_space = obs_space
         self.share_obs_space = cent_obs_space
         self.act_space = act_space
 
@@ -74,8 +71,6 @@ class HAPPO_Policy:
         :return rnn_states_actor: (torch.Tensor) updated actor network RNN states.
         :return rnn_states_critic: (torch.Tensor) updated critic network RNN states.
         """
-        if self.args.use_cent_local_observe:
-            obs = np.concatenate((cent_obs,obs),axis=-1)
         actions, action_log_probs, rnn_states_actor = self.actor(obs,
                                                                  rnn_states_actor,
                                                                  masks,
@@ -116,17 +111,15 @@ class HAPPO_Policy:
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
 
-        if self.args.use_cent_local_observe:
-            obs = np.concatenate((cent_obs,obs),axis=-1)
-        action_log_probs, dist_entropy = self.actor.evaluate_actions(obs,
-                                                                rnn_states_actor,
-                                                                action,
-                                                                masks,
-                                                                available_actions,
-                                                                active_masks)
-
+        action_log_probs, dist_entropy , action_mu, action_std, all_probs= self.actor.evaluate_actions(obs,
+                                                                    rnn_states_actor,
+                                                                    action,
+                                                                    masks,
+                                                                    available_actions,
+                                                                    active_masks)
         values, _ = self.critic(cent_obs, rnn_states_critic, masks)
-        return values, action_log_probs, dist_entropy
+        return values, action_log_probs, dist_entropy, action_mu, action_std, all_probs
+
 
 
     def act(self, obs, rnn_states_actor, masks, available_actions=None, deterministic=False):

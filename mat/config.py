@@ -158,7 +158,7 @@ def get_config():
 
     # prepare parameters
     parser.add_argument("--algorithm_name", type=str,
-                        default='mat', choices=["mat", "mat_dec", "mat_encoder", "mat_decoder", "mat_gru","happo","rmappo","random"])
+                        default='mat', choices=["mat", "mat_dec", "mat_encoder", "mat_decoder", "mat_gru","happo","rmappo","random","hatrpo"])
 
     parser.add_argument("--experiment_name", type=str, default="check", help="an identifier to distinguish different experiment.")
     parser.add_argument("--seed", type=int, default=1, help="Random seed for numpy/torch")
@@ -230,7 +230,13 @@ def get_config():
     parser.add_argument("--weight_decay", type=float, default=0)
     parser.add_argument("--std_x_coef", type=float, default=1)
     parser.add_argument("--std_y_coef", type=float, default=0.5)
-
+    # Trpo parameters
+    parser.add_argument("--kl_threshold", type=float, 
+                        default=0.01, help='the threshold of kl-divergence (default: 0.01)')
+    parser.add_argument("--ls_step", type=int, 
+                        default=10, help='number of line search (default: 10)')
+    parser.add_argument("--accept_ratio", type=float, 
+                        default=0.5, help='accept ratio of loss improve (default: 0.5)')
     # ppo parameters
     parser.add_argument("--ppo_epoch", type=int, default=15,
                         help='number of ppo epochs (default: 15)')
