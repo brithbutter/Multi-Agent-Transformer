@@ -237,7 +237,7 @@ class HATRPO():
         loss_grad = self.flat_grad(loss_grad)
 
         step_dir = self.conjugate_gradient(self.policy.actor, 
-                                      obs_batch, 
+                                      np.concatenate((share_obs_batch,obs_batch),axis=-1), 
                                       rnn_states_batch, 
                                       actions_batch, 
                                       masks_batch, 
@@ -250,7 +250,7 @@ class HATRPO():
 
         params = self.flat_params(self.policy.actor)
         fvp = self.fisher_vector_product(self.policy.actor,
-                                    obs_batch, 
+                                    np.concatenate((share_obs_batch,obs_batch),axis=-1), 
                                     rnn_states_batch, 
                                     actions_batch, 
                                     masks_batch, 
@@ -296,7 +296,7 @@ class HATRPO():
             new_loss = new_loss.data.cpu().numpy()
             loss_improve = new_loss - loss
             
-            kl = self.kl_divergence(obs_batch, 
+            kl = self.kl_divergence(np.concatenate((share_obs_batch,obs_batch),axis=-1), 
                                rnn_states_batch, 
                                actions_batch, 
                                masks_batch, 
