@@ -49,19 +49,19 @@ class Runner(object):
 
         # dir
         self.model_dir = self.all_args.model_dir
-
-        if self.use_wandb:
-            self.save_dir = str(wandb.run.dir)
-            self.run_dir = str(wandb.run.dir)
-        else:
-            self.run_dir = config["run_dir"]
-            self.log_dir = str(self.run_dir / 'logs')
-            if not os.path.exists(self.log_dir):
-                os.makedirs(self.log_dir)
-            self.writter = SummaryWriter(self.log_dir)
-            self.save_dir = str(self.run_dir / 'models')
-            if not os.path.exists(self.save_dir):
-                os.makedirs(self.save_dir)
+        if config["run_dir"] is not None:
+            if self.use_wandb:
+                self.save_dir = str(wandb.run.dir)
+                self.run_dir = str(wandb.run.dir)
+            else:
+                self.run_dir = config["run_dir"]
+                self.log_dir = str(self.run_dir / 'logs')
+                if not os.path.exists(self.log_dir):
+                    os.makedirs(self.log_dir)
+                self.writter = SummaryWriter(log_dir=self.log_dir,max_queue=200)
+                self.save_dir = str(self.run_dir / 'models')
+                if not os.path.exists(self.save_dir):
+                    os.makedirs(self.save_dir)
 
         share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[0]
 
@@ -110,6 +110,22 @@ class Runner(object):
                                         self.envs.action_space[index])
                 self.buffer.append(bu)
                 self.trainer.append(tr)
+        elif self.algorithm_name == "ppo":
+            from mat.utils.single_buffer import SingleReplayBuffer
+            from mat.algorithms.ppo.ppo_trainer import PPO as TrainAlgo
+            from mat.algorithms.ppo.ppo_policy import PPO_Policy as Policy 
+            self.policy = Policy(self.all_args,
+                            self.envs.observation_space[0],
+                            share_observation_space,
+                            self.envs.action_space[0],
+                            device = self.device)
+            self.trainer = TrainAlgo(self.all_args, self.policy, device = self.device)
+            self.buffer = SingleReplayBuffer(self.all_args, 
+                                            self.num_agents,
+                                            self.envs.observation_space[0],
+                                            share_observation_space,
+                                            self.envs.action_space[0],
+                                            self.all_args.env_name)
         elif self.algorithm_name == "rmappo":
             from mat.utils.separated_buffer import SeparatedReplayBuffer
             from mat.algorithms.r_mappo.r_mappo import R_MAPPO as TrainAlgo
@@ -187,6 +203,7 @@ class Runner(object):
                                             share_observation_space,
                                             self.envs.action_space[0],
                                             self.all_args.env_name)
+            # print("num_agents: ",self.num_agents,"\t obs",self.envs.observation_space[0],"\t cent_obs",share_observation_space,"act_dim",self.envs.action_space[0])
         if self.model_dir is not None:
             self.restore(self.model_dir)
 
@@ -219,9 +236,17 @@ class Runner(object):
                                                                     self.buffer[agent_id].rnn_states_critic[-1],
                                                                     self.buffer[agent_id].masks[-1])
                 next_value = _t2n(next_value)
-            self.buffer[agent_id].compute_returns(next_value, self.trainer[agent_id].value_normalizer)
+                self.buffer[agent_id].compute_returns(next_value, self.trainer[agent_id].value_normalizer)
         elif self.all_args.algorithm_name == "random":
             pass
+        
+        elif self.all_args.algorithm_name == "ppo":
+            factor = np.ones((self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
+            self.buffer.update_factor(factor)
+            next_values = self.trainer.policy.get_values((self.buffer.share_obs[-1]),
+                                                            (self.buffer.rnn_states_critic[-1]),
+                                                            (self.buffer.masks[-1]))
+            self.buffer.compute_returns(_t2n(next_values), self.trainer.value_normalizer)
         else:
             self.trainer.prep_rollout()
             if self.buffer.available_actions is None:
@@ -334,6 +359,7 @@ class Runner(object):
             return train_infos
         else:
             self.trainer.prep_training()
+            # self.buffer.save()
             train_infos = self.trainer.train(self.buffer)      
             self.buffer.after_update()
             return train_infos
