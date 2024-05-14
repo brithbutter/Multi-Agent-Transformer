@@ -17,7 +17,7 @@ class HATRPO():
                  args,
                  policy,
                  device=torch.device("cpu")):
-
+        self.use_cent_local_observe = args.use_cent_local_observe
         self.device = device
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.policy = policy
@@ -128,8 +128,8 @@ class HATRPO():
         return kl
 
     def kl_divergence(self, obs, rnn_states, action, masks, available_actions, active_masks, new_actor, old_actor):
-        _, _, mu, std, probs = new_actor.evaluate_actions(obs, rnn_states, action, masks, available_actions, active_masks)
         _, _, mu_old, std_old, probs_old = old_actor.evaluate_actions(obs, rnn_states, action, masks, available_actions, active_masks)
+        _, _, mu, std, probs = new_actor.evaluate_actions(obs, rnn_states, action, masks, available_actions, active_masks)
         if mu.grad_fn==None:
             probs_old=probs_old.detach()
             kl= self.kl_approx(probs_old,probs)
@@ -235,28 +235,47 @@ class HATRPO():
 
         loss_grad = torch.autograd.grad(loss, self.policy.actor.parameters(), allow_unused=True)
         loss_grad = self.flat_grad(loss_grad)
-
-        step_dir = self.conjugate_gradient(self.policy.actor, 
-                                      np.concatenate((share_obs_batch,obs_batch),axis=-1), 
-                                      rnn_states_batch, 
-                                      actions_batch, 
-                                      masks_batch, 
-                                      available_actions_batch, 
-                                      active_masks_batch, 
-                                      loss_grad.data, 
-                                      nsteps=10)
-        
+        if self.use_cent_local_observe: 
+            step_dir = self.conjugate_gradient(self.policy.actor, 
+                                        np.concatenate((share_obs_batch,obs_batch),axis=-1), 
+                                        rnn_states_batch, 
+                                        actions_batch, 
+                                        masks_batch, 
+                                        available_actions_batch, 
+                                        active_masks_batch, 
+                                        loss_grad.data, 
+                                        nsteps=10)
+        else:
+            step_dir = self.conjugate_gradient(self.policy.actor, 
+                                        obs_batch, 
+                                        rnn_states_batch, 
+                                        actions_batch, 
+                                        masks_batch, 
+                                        available_actions_batch, 
+                                        active_masks_batch, 
+                                        loss_grad.data, 
+                                        nsteps=10)
         loss = loss.data.cpu().numpy()
 
         params = self.flat_params(self.policy.actor)
-        fvp = self.fisher_vector_product(self.policy.actor,
-                                    np.concatenate((share_obs_batch,obs_batch),axis=-1), 
-                                    rnn_states_batch, 
-                                    actions_batch, 
-                                    masks_batch, 
-                                    available_actions_batch, 
-                                    active_masks_batch, 
-                                    step_dir)
+        if self.use_cent_local_observe:
+            fvp = self.fisher_vector_product(self.policy.actor,
+                                        np.concatenate((share_obs_batch,obs_batch),axis=-1), 
+                                        rnn_states_batch, 
+                                        actions_batch, 
+                                        masks_batch, 
+                                        available_actions_batch, 
+                                        active_masks_batch, 
+                                        step_dir)
+        else:
+            fvp = self.fisher_vector_product(self.policy.actor,
+                                        obs_batch, 
+                                        rnn_states_batch, 
+                                        actions_batch, 
+                                        masks_batch, 
+                                        available_actions_batch, 
+                                        active_masks_batch, 
+                                        step_dir)
         shs = 0.5 * (step_dir * fvp).sum(0, keepdim=True)
         step_size = 1 / torch.sqrt(shs / self.kl_threshold)[0]
         full_step = step_size * step_dir
@@ -295,15 +314,24 @@ class HATRPO():
 
             new_loss = new_loss.data.cpu().numpy()
             loss_improve = new_loss - loss
-            
-            kl = self.kl_divergence(np.concatenate((share_obs_batch,obs_batch),axis=-1), 
-                               rnn_states_batch, 
-                               actions_batch, 
-                               masks_batch, 
-                               available_actions_batch, 
-                               active_masks_batch,
-                               new_actor=self.policy.actor,
-                               old_actor=old_actor)
+            if self.use_cent_local_observe:
+                kl = self.kl_divergence(np.concatenate((share_obs_batch,obs_batch),axis=-1), 
+                                rnn_states_batch, 
+                                actions_batch, 
+                                masks_batch, 
+                                available_actions_batch, 
+                                active_masks_batch,
+                                new_actor=self.policy.actor,
+                                old_actor=old_actor)
+            else:
+                kl = self.kl_divergence(obs_batch, 
+                                rnn_states_batch, 
+                                actions_batch, 
+                                masks_batch, 
+                                available_actions_batch, 
+                                active_masks_batch,
+                                new_actor=self.policy.actor,
+                                old_actor=old_actor)
             kl = kl.mean()
 
             if kl < self.kl_threshold and (loss_improve / expected_improve) > self.accept_ratio and loss_improve.item()>0:
