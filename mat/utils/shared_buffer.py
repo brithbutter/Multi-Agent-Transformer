@@ -88,7 +88,33 @@ class SharedReplayBuffer(object):
         self.active_masks = np.ones_like(self.masks)
 
         self.step = 0
+    
+    def save(self,file_name = "shared_buffer.npy"):
+        with open(file_name,"wb") as writter:
+            np.save(writter,self.share_obs)
+            np.save(writter,self.obs)
+            np.save(writter,self.rnn_states)
+            np.save(writter,self.rnn_states_critic)
+            np.save(writter,self.actions)
+            np.save(writter,self.action_log_probs)
+            np.save(writter,self.value_preds)
+            np.save(writter,self.rewards)
+            np.save(writter,self.masks)
+            np.save(writter,self.available_actions)
 
+    def load(self,file_name = "shared_buffer.npy"):
+        with open(file_name,"wb") as reader:
+            self.share_obs = np.load(reader)
+            self.obs = np.load(reader)
+            self.rnn_states = np.load(reader)
+            self.rnn_states_critic = np.load(reader)
+            self.actions = np.load(reader)
+            self.action_log_probs = np.load(reader)
+            self.value_preds = np.load(reader)
+            self.rewards = np.load(reader)
+            self.masks = np.load(reader)
+            self.available_actions = np.load(reader)
+    
     def insert(self, share_obs, obs, rnn_states_actor, rnn_states_critic, actions, action_log_probs,
                value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None):
         """
