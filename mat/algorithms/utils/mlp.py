@@ -31,7 +31,7 @@ class MLPLayer(nn.Module):
 
 
 class MLPBase(nn.Module):
-    def __init__(self, args, obs_shape, cat_self=True, attn_internal=False):
+    def __init__(self, args, obs_shape,action_space, cat_self=True, attn_internal=False):
         super(MLPBase, self).__init__()
 
         self._use_feature_normalization = args.use_feature_normalization
@@ -48,11 +48,21 @@ class MLPBase(nn.Module):
 
         self.mlp = MLPLayer(obs_dim, self.hidden_size,
                               self._layer_N, self._use_orthogonal, self._use_ReLU)
-
+        if action_space is not None and action_space.__class__.__name__ == "Action_Space" and action_space.mixed:
+            actionaction_dims = action_space.high - action_space.low
+            action_range = action_space.n
+            semi_index = - action_space.semi_index
+            self.output = MLPLayer(self.hidden_size, actionaction_dims*action_range+semi_index,
+                            self._layer_N, self._use_orthogonal, self._use_ReLU) 
+        else:
+            self.output = MLPLayer(self.hidden_size, self.hidden_size,
+                            self._layer_N, self._use_orthogonal, self._use_ReLU) 
+            
     def forward(self, x):
         if self._use_feature_normalization:
             x = self.feature_norm(x)
 
         x = self.mlp(x)
+        x = self.output(x)
 
         return x
