@@ -45,7 +45,7 @@ class TransformerPolicy:
             print("act high: ", act_space.high)
             self.act_dim = act_space.shape[0]
             self.act_num = self.act_dim
-
+        print("num_agents: ",num_agents)
         print("obs_dim: ", self.obs_dim)
         print("share_obs_dim: ", self.share_obs_dim)
         print("act_dim: ", self.act_dim)
