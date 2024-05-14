@@ -137,7 +137,7 @@ class ShareVecEnv(ABC):
         return self.viewer
 
 
-def worker(remote, parent_remote, env_fn_wrapper):
+def worker(remote, parent_remote, env_fn_wrapper,auto_reset=True):
     parent_remote.close()
     env = env_fn_wrapper.x()
     while True:
@@ -148,7 +148,7 @@ def worker(remote, parent_remote, env_fn_wrapper):
                 if done:
                     ob = env.reset()
             else:
-                if np.all(done):
+                if np.all(done) and (not auto_reset):
                     ob = env.reset()
 
             remote.send((ob, reward, done, info))
@@ -297,7 +297,7 @@ class SubprocVecEnv(ShareVecEnv):
             return np.stack(frame) 
 
 
-def shareworker(remote, parent_remote, env_fn_wrapper):
+def shareworker(remote, parent_remote, env_fn_wrapper,auto_reset=True):
     parent_remote.close()
     env = env_fn_wrapper.x()
     while True:
@@ -308,7 +308,7 @@ def shareworker(remote, parent_remote, env_fn_wrapper):
                 if done:
                     ob, s_ob, available_actions = env.reset()
             else:
-                if np.all(done):
+                if np.all(done) and not auto_reset:
                     ob, s_ob, available_actions = env.reset()
 
             remote.send((ob, s_ob, reward, done, info, available_actions))
@@ -373,6 +373,9 @@ class ShareSubprocVecEnv(ShareVecEnv):
         results = [remote.recv() for remote in self.remotes]
         self.waiting = False
         obs, share_obs, rews, dones, infos, available_actions = zip(*results)
+        for rew in rews:
+            if rew.shape != rews[0].shape:
+                print(rew.shape,"!===",rews[0].shape)
         return np.stack(obs), np.stack(share_obs), np.stack(rews), np.stack(dones), infos, np.stack(available_actions)
 
     def reset(self):
