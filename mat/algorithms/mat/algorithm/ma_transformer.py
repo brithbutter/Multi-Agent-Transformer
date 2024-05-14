@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 import math
 import numpy as np
+import time
 from torch.distributions import Categorical
 from mat.algorithms.utils.util import check, init
 from mat.algorithms.utils.transformer_act import discrete_autoregreesive_act
@@ -40,6 +41,7 @@ class SelfAttention(nn.Module):
         self.att_bp = None
 
     def forward(self, key, value, query):
+        # Batch size; Length( Num of agents) ; Dimention (Num of Embedding)
         B, L, D = query.size()
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
@@ -47,6 +49,7 @@ class SelfAttention(nn.Module):
         q = self.query(query).view(B, L, self.n_head, D // self.n_head).transpose(1, 2)  # (B, nh, L, hs)
         v = self.value(value).view(B, L, self.n_head, D // self.n_head).transpose(1, 2)  # (B, nh, L, hs)
 
+        # (q \times k^T)/sqrt(d//n_head)
         # causal attention: (B, nh, L, hs) x (B, nh, hs, L) -> (B, nh, L, L)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
 
@@ -73,6 +76,7 @@ class EncodeBlock(nn.Module):
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
         # self.attn = SelfAttention(n_embd, n_head, n_agent, masked=True)
+        # self.attn = nn.MultiheadAttention(n_embd,n_head)
         self.attn = SelfAttention(n_embd, n_head, n_agent, masked=False)
         self.mlp = nn.Sequential(
             init_(nn.Linear(n_embd, 1 * n_embd), activate=True),
@@ -256,8 +260,8 @@ class MultiAgentTransformer(nn.Module):
         # available_actions: (batch, n_agent, act_dim)
 
         # state unused
-        ori_shape = np.shape(state)
-        state = np.zeros((*ori_shape[:-1], 37), dtype=np.float32)
+        # ori_shape = np.shape(state)
+        # state = np.zeros((*ori_shape[:-1], 37), dtype=np.float32)
 
         state = check(state).to(**self.tpdv)
         obs = check(obs).to(**self.tpdv)
@@ -283,8 +287,8 @@ class MultiAgentTransformer(nn.Module):
 
     def get_actions(self, state, obs, available_actions=None, deterministic=False):
         # state unused
-        ori_shape = np.shape(obs)
-        state = np.zeros((*ori_shape[:-1], 37), dtype=np.float32)
+        # ori_shape = np.shape(obs)
+        # state = np.zeros((*ori_shape[:-1], 37), dtype=np.float32)
 
         state = check(state).to(**self.tpdv)
         obs = check(obs).to(**self.tpdv)
@@ -293,20 +297,20 @@ class MultiAgentTransformer(nn.Module):
 
         batch_size = np.shape(obs)[0]
         v_loc, obs_rep = self.encoder(state, obs)
+        
         if self.action_type == "Discrete":
             output_action, output_action_log = discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                             self.n_agent, self.action_dim, self.tpdv,
                                                                             available_actions, deterministic)
         elif self.action_type == "Semi_Discrete":
             output_action, output_action_log = semi_discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
-                                                                            self.n_agent, self.action_dim, self.tpdv,
-                                                                            available_actions, deterministic,semi_index=self.semi_index)
+                                                                                self.n_agent, self.action_dim, self.tpdv,
+                                                                                available_actions, deterministic,semi_index=self.semi_index)
             
         else:
             output_action, output_action_log = continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                             self.n_agent, self.action_dim, self.tpdv,
                                                                             deterministic)
-
         return output_action, output_action_log, v_loc
 
     def get_values(self, state, obs, available_actions=None):
