@@ -19,12 +19,20 @@ class ACTLayer(nn.Module):
             action_dim = action_space.n
             self.action_out = Categorical(inputs_dim, action_dim, use_orthogonal, gain)
         elif action_space.__class__.__name__ == "Action_Space":
+            if action_space.mixed:
+                self.mixed_action = True
+                self.semi_index = action_space.semi_index
+                self.log_std = torch.nn.Parameter(torch.ones(-self.semi_index))
+                # self.countious_action_out = torch.distributions.Normal(inputs_dim, -self.semi_index, use_orthogonal, gain, args)
+                self.multi_discrete = True
+                self.action_dims = action_space.high - action_space.low
+                self.action_range = action_space.n
             if action_space.extra:
                 action_dim = 1
                 self.action_out = DiagGaussian(inputs_dim, action_dim, use_orthogonal, gain, args)
             elif action_space.multi_discrete:
                 self.multi_discrete = True
-                action_dims = action_space.high - action_space.low + 1
+                action_dims = action_space.high - action_space.low
                 self.action_outs = []
                 for action_dim in action_dims:
                     self.action_outs.append(Categorical(inputs_dim, action_dim, use_orthogonal, gain))
@@ -43,6 +51,7 @@ class ACTLayer(nn.Module):
             action_dims = action_space.high - action_space.low + 1
             self.action_outs = []
             for action_dim in action_dims:
+                
                 self.action_outs.append(Categorical(inputs_dim, action_dim, use_orthogonal, gain))
             self.action_outs = nn.ModuleList(self.action_outs)
         else:  # discrete + continous
@@ -66,15 +75,25 @@ class ACTLayer(nn.Module):
         if self.mixed_action :
             actions = []
             action_log_probs = []
-            for action_out in self.action_outs:
-                action_logit = action_out(x)
-                action = action_logit.mode() if deterministic else action_logit.sample()
-                action_log_prob = action_logit.log_probs(action)
-                actions.append(action.float())
-                action_log_probs.append(action_log_prob)
-
+            for i in range(self.action_dims):
+                logit = x[:,i*self.action_range:(i+1)*self.action_range]
+                logit[available_actions[:,i,:]== 0] = -1e10 
+                distri = torch.distributions.Categorical(logits=logit)
+                action = distri.probs.argmax(dim=-1) if deterministic else distri.sample()
+                action_log_prob = distri.log_prob(action)
+                actions.append(action.view(-1,1).float())
+                action_log_probs.append(action_log_prob.view(-1,1))
+            # continous_action_logits = self.countious_action_out(x, available_actions)
+            continous_action_mean = x[:,self.semi_index:]
+            continous_action_std = torch.sigmoid(self.log_std)*0.5
+            distri = torch.distributions.Normal(continous_action_mean,continous_action_std)
+            continous_action = continous_action_mean if deterministic else distri.sample() 
+            continous_action_log_prob = distri.log_prob(continous_action)
+            actions.append(continous_action.view(-1,-self.semi_index).float())
+            action_log_probs.append(continous_action_log_prob)
             actions = torch.cat(actions, -1)
             action_log_probs = torch.sum(torch.cat(action_log_probs, -1), -1, keepdim=True)
+            # action_log_probs = torch.cat(action_log_probs, -1).min(dim=-1,keepdim=True).values
 
         elif self.multi_discrete:
             actions = []
@@ -131,24 +150,44 @@ class ACTLayer(nn.Module):
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
         if self.mixed_action:
-            a, b = action.split((2, 1), -1)
-            b = b.long()
+            a, b = action.split((100, 1), -1)
+            x[:,:self.semi_index][available_actions.view(available_actions.shape[0],-1)[:,:self.semi_index*self.action_range] == 0] = -1e10 
+            a = a.long()
             action = [a, b] 
             action_log_probs = [] 
             dist_entropy = []
-            for action_out, act in zip(self.action_outs, action):
-                action_logit = action_out(x)
-                action_log_probs.append(action_logit.log_probs(act))
-                if active_masks is not None:
-                    if len(action_logit.entropy().shape) == len(active_masks.shape):
-                        dist_entropy.append((action_logit.entropy() * active_masks).sum()/active_masks.sum()) 
-                    else:
-                        dist_entropy.append((action_logit.entropy() * active_masks.squeeze(-1)).sum()/active_masks.sum())
-                else:
-                    dist_entropy.append(action_logit.entropy().mean())
+            final_dist_entropy = []
+            for i in range((self.action_dims)):
+                act = a[:,i]
+                logit = x[:,i*self.action_range:(i+1)*self.action_range]
                 
+                distri = torch.distributions.Categorical(logits=logit)
+                action_log_probs.append(distri.log_prob(act).view(-1,1))
+                if active_masks is not None:
+                    if len(distri.entropy().shape) == len(active_masks.shape):
+                        dist_entropy.append((distri.entropy() * active_masks).sum()/active_masks.sum()) 
+                    else:
+                        dist_entropy.append((distri.entropy() * active_masks.squeeze(-1)).sum()/active_masks.sum())
+                else:
+                    dist_entropy.append(distri.entropy().mean())
+            final_dist_entropy.append(torch.mean(torch.tensor(dist_entropy)))
+            continous_action_mean =  x[:,self.semi_index:]
+            continous_action_std = torch.sigmoid(self.log_std)*0.5
+            distri = torch.distributions.Normal(continous_action_mean,continous_action_std)
+            action_log_probs.append(distri.log_prob(b))
+            
+            ent = distri.entropy()
+            if active_masks is not None:
+                if len(distri.entropy().shape) == len(active_masks.shape):
+                    dist_entropy.append((distri.entropy() * active_masks).sum()/active_masks.sum()) 
+                else:
+                    dist_entropy.append((distri.entropy() * active_masks.squeeze(-1)).sum()/active_masks.sum())
+            else:
+                dist_entropy.append(distri.entropy().mean())
+            final_dist_entropy.append(dist_entropy[-1])
             action_log_probs = torch.sum(torch.cat(action_log_probs, -1), -1, keepdim=True)
-            dist_entropy = dist_entropy[0] / 2.0 + dist_entropy[1] / 0.98 
+            # action_log_probs = torch.cat(action_log_probs, -1).min(dim=-1,keepdim=True).values
+            dist_entropy = final_dist_entropy[0] / 0.98 + final_dist_entropy[1] / 0.98 
 
         elif self.multi_discrete:
             action = torch.transpose(action, 0, 1)
