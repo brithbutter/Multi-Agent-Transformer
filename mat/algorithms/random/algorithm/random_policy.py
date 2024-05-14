@@ -56,7 +56,7 @@ class Random_Policy:
     def lr_decay(self, episode, episodes):
         pass
 
-    def get_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, masks, available_actions=None,
+    def get_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, available_actions=None,
                     deterministic=False):
         """
         Compute actions and value function predictions for the given inputs.
@@ -157,5 +157,6 @@ class Random_Policy:
         """
         actions, _, rnn_states_actor = self.actor(obs, rnn_states_actor, masks, available_actions, deterministic)
         return actions, rnn_states_actor
-
+    def eval(self):
+        pass
 # %%
