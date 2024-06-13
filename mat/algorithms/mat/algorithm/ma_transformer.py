@@ -285,7 +285,7 @@ class MultiAgentTransformer(nn.Module):
 
         return action_log, v_loc, entropy
 
-    def get_actions(self, state, obs, available_actions=None, deterministic=False):
+    def get_actions(self, state, obs, available_actions=None, deterministic=False, stride= 2):
         # state unused
         # ori_shape = np.shape(obs)
         # state = np.zeros((*ori_shape[:-1], 37), dtype=np.float32)
@@ -305,7 +305,7 @@ class MultiAgentTransformer(nn.Module):
         elif self.action_type == "Semi_Discrete":
             output_action, output_action_log = semi_discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                                 self.n_agent, self.action_dim, self.tpdv,
-                                                                                available_actions, deterministic,semi_index=self.semi_index)
+                                                                                available_actions, deterministic,semi_index=self.semi_index,stride=stride)
             
         else:
             output_action, output_action_log = continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,

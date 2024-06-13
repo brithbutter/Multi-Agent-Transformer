@@ -23,7 +23,7 @@ def continuous_action(act_mean,action_std,deterministic=False):
     return action,action_log
 
 def semi_discrete_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent, action_dim, tpdv,
-                                available_actions=None, deterministic=False, semi_index = -1):
+                                available_actions=None, deterministic=False, semi_index = -1,stride = 2):
     shifted_action = torch.zeros((batch_size, n_agent, action_dim+1)).to(**tpdv)
     shifted_action[:, 0, 0] = 1
     output_action = torch.zeros((batch_size, n_agent, 1), dtype=torch.float32)
@@ -55,7 +55,8 @@ def semi_discrete_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent,
                         shifted_action[:, i +starting_index + 1, :] = action 
             if ending_index < n_agent:
                 starting_index = ending_index
-                ending_index *= 2
+                # ending_index *= 3
+                ending_index += stride
                 if ending_index > n_agent:
                     ending_index = n_agent
     else:

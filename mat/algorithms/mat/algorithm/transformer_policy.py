@@ -100,7 +100,7 @@ class TransformerPolicy:
         update_linear_schedule(self.optimizer, episode, episodes, self.lr)
 
     def get_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, masks, available_actions=None,
-                    deterministic=False):
+                    deterministic=False,stride = 2):
         """
         Compute actions and value function predictions for the given inputs.
         :param cent_obs (np.ndarray): centralized input to the critic.
@@ -127,7 +127,8 @@ class TransformerPolicy:
         actions, action_log_probs, values = self.transformer.get_actions(cent_obs,
                                                                          obs,
                                                                          available_actions,
-                                                                         deterministic)
+                                                                         deterministic,
+                                                                         stride=stride)
 
         actions = actions.view(-1, self.act_num)
         action_log_probs = action_log_probs.view(-1, self.act_num)
@@ -196,7 +197,7 @@ class TransformerPolicy:
 
         return values, action_log_probs, entropy
 
-    def act(self, cent_obs, obs, rnn_states_actor, masks, available_actions=None, deterministic=True):
+    def act(self, cent_obs, obs, rnn_states_actor, masks, available_actions=None, deterministic=True,stride = 2):
         """
         Compute actions using the given inputs.
         :param obs (np.ndarray): local agent inputs to the actor.
@@ -215,7 +216,8 @@ class TransformerPolicy:
                                                               rnn_states_critic,
                                                               masks,
                                                               available_actions,
-                                                              deterministic)
+                                                              deterministic,
+                                                              stride = stride)
 
         return actions, rnn_states_actor
 
