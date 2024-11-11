@@ -4,7 +4,9 @@ import torch.nn as nn
 from mat.utils.util import get_gard_norm, huber_loss, mse_loss
 from mat.utils.valuenorm import ValueNorm
 from mat.algorithms.utils.util import check
-
+def _t2n(x):
+    """Convert torch tensor to a numpy array."""
+    return x.detach().cpu().numpy()
 
 class MATTrainer:
     """
@@ -23,6 +25,7 @@ class MATTrainer:
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.policy = policy
         self.num_agents = num_agents
+        self.n_rollout_threads = args.n_rollout_threads
 
         self.clip_param = args.clip_param
         self.ppo_epoch = args.ppo_epoch
@@ -160,11 +163,7 @@ class MATTrainer:
 
         :return train_info: (dict) contains information regarding training update (e.g. loss, grad norms, etc).
         """
-        advantages_copy = buffer.advantages.copy()
-        advantages_copy[buffer.active_masks[:-1] == 0.0] = np.nan
-        mean_advantages = np.nanmean(advantages_copy)
-        std_advantages = np.nanstd(advantages_copy)
-        advantages = (buffer.advantages - mean_advantages) / (std_advantages + 1e-5)
+        
         
 
         train_info = {}
@@ -177,6 +176,25 @@ class MATTrainer:
         train_info['ratio'] = 0
 
         for _ in range(self.ppo_epoch):
+            
+            if buffer.available_actions is None:
+                next_values = self.policy.get_values(np.concatenate(buffer.share_obs[-1]),
+                                                            np.concatenate(buffer.obs[-1]),
+                                                            np.concatenate(buffer.rnn_states_critic[-1]),
+                                                            np.concatenate(buffer.masks[-1]))
+            else:
+                next_values = self.policy.get_values(np.concatenate(buffer.share_obs[-1]),
+                                                            np.concatenate(buffer.obs[-1]),
+                                                            np.concatenate(buffer.rnn_states_critic[-1]),
+                                                            np.concatenate(buffer.masks[-1]),
+                                                            np.concatenate(buffer.available_actions[-1]))
+            next_values = np.array(np.split(_t2n(next_values), self.n_rollout_threads))
+            buffer.compute_returns(next_values, self.value_normalizer)
+            advantages_copy = buffer.advantages.copy()
+            advantages_copy[buffer.active_masks[:-1] == 0.0] = np.nan
+            mean_advantages = np.nanmean(advantages_copy)
+            std_advantages = np.nanstd(advantages_copy)
+            advantages = (buffer.advantages - mean_advantages) / (std_advantages + 1e-5)
             data_generator = buffer.feed_forward_generator_transformer(advantages, self.num_mini_batch)
 
             for sample in data_generator:
