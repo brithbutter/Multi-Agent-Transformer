@@ -29,7 +29,7 @@ class SingleReplayBuffer(object):
     :param act_space: (gym.Space) action space for agents.
     """
 
-    def __init__(self, args,num_agents, obs_space, cent_obs_space, act_space, env_name):
+    def __init__(self, args,num_agents, obs_space, cent_obs_space, act_space, env_name, large_model=True):
         self.episode_length = args.episode_length
         self.n_rollout_threads = args.n_rollout_threads
         self.hidden_size = args.hidden_size
@@ -68,8 +68,10 @@ class SingleReplayBuffer(object):
             (self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
 
         if act_space.__class__.__name__ == 'Discrete' or act_space.__class__.__name__ == 'Action_Space' :
-            self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents,act_space.n),
-                                             dtype=np.float32)
+            if large_model:
+                self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents,act_space.n),dtype=np.float32)
+            else:
+                self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, act_space.n,act_space.dim),dtype=np.float32)
         else:
             self.available_actions = None
 
