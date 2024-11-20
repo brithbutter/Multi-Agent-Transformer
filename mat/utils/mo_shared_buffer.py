@@ -223,38 +223,39 @@ class MOSharedReplayBuffer(object):
         self.masks[0] = self.masks[-1].copy()
         self.bad_masks[0] = self.bad_masks[-1].copy()
 
-    def compute_returns(self, next_value, value_normalizer=None):
+    def compute_returns(self, next_objective_value, value_normalizer=None):
         """
         Compute returns either as discounted sum of rewards, or using GAE.
         :param next_value: (np.ndarray) value predictions for the step after the last episode step.
         :param value_normalizer: (PopArt) If not None, PopArt value normalizer instance.
         """
-        self.objective_preds[-1] = next_value
-        gae = 0
-        for step in reversed(range(self.objectives.shape[0])):
-            if self._use_popart or self._use_valuenorm:
-                delta = self.objectives[step] + self.gamma * value_normalizer.denormalize(
-                    self.objective_preds[step + 1]) * self.masks[step + 1] \
-                        - value_normalizer.denormalize(self.objective_preds[step])
-                gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
+        for i_objective in range(self.n_objective):
+            self.objective_preds[i_objective][-1] = next_objective_value[i_objective]
+            gae = 0
+            for step in reversed(range(self.objectives[i_objective].shape[0])):
+                if self._use_popart or self._use_valuenorm:
+                    delta = self.objectives[i_objective][step] + self.gamma * value_normalizer.denormalize(
+                        self.objective_preds[i_objective][step + 1]) * self.masks[step + 1] \
+                            - value_normalizer.denormalize(self.objective_preds[i_objective][step])
+                    gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
 
-                # here is a patch for mpe, whose last step is timeout instead of terminate
-                if self.env_name == "MPE" and step == self.objectives.shape[0] - 1:
-                    gae = 0
+                    # here is a patch for mpe, whose last step is timeout instead of terminate
+                    if self.env_name == "MPE" and step == self.objectives[i_objective].shape[0] - 1:
+                        gae = 0
 
-                self.advantages[step] = gae
-                self.returns[step] = gae + value_normalizer.denormalize(self.objective_preds[step])
-            else:
-                delta = self.objectives[step] + self.gamma * self.objective_preds[step + 1] * \
-                        self.masks[step + 1] - self.objective_preds[step]
-                gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
+                    self.advantages[i_objective][step] = gae
+                    self.returns[i_objective][step] = gae + value_normalizer.denormalize(self.objective_preds[i_objective][step])
+                else:
+                    delta = self.objectives[i_objective][step] + self.gamma * self.objective_preds[i_objective][step + 1] * \
+                            self.masks[step + 1] - self.objective_preds[i_objective][step]
+                    gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
 
-                # here is a patch for mpe, whose last step is timeout instead of terminate
-                if self.env_name == "MPE" and step == self.objectives.shape[0] - 1:
-                    gae = 0
+                    # here is a patch for mpe, whose last step is timeout instead of terminate
+                    if self.env_name == "MPE" and step == self.objectives[i_objective].shape[0] - 1:
+                        gae = 0
 
-                self.advantages[step] = gae
-                self.returns[step] = gae + self.objective_preds[step]
+                    self.advantages[i_objective][step] = gae
+                    self.returns[i_objective][step] = gae + self.objective_preds[i_objective][step]
 
     def feed_forward_generator_transformer(self, advantages, num_mini_batch=None, mini_batch_size=None):
         """
