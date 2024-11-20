@@ -169,7 +169,7 @@ class MOSharedReplayBuffer(object):
         self.step = (self.step + 1) % self.episode_length
 
     def chooseinsert(self, share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs,
-                     value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None):
+                     objective_preds, objectives, masks, bad_masks=None, active_masks=None, available_actions=None):
         """
         Insert data into the buffer. This insert function is used specifically for Hanabi, which is turn based.
         :param share_obs: (argparse.Namespace) arguments containing relevant model, policy, and env information.
@@ -178,8 +178,8 @@ class MOSharedReplayBuffer(object):
         :param rnn_states_critic: (np.ndarray) RNN states for critic network.
         :param actions:(np.ndarray) actions taken by agents.
         :param action_log_probs:(np.ndarray) log probs of actions taken by agents
-        :param value_preds: (np.ndarray) value function prediction at each step.
-        :param rewards: (np.ndarray) reward collected at each step.
+        :param objective_preds: (np.ndarray) objective value function prediction at each step.
+        :param objectives: (np.ndarray) objective collected at each step.
         :param masks: (np.ndarray) denotes whether the environment has terminated or not.
         :param bad_masks: (np.ndarray) denotes indicate whether whether true terminal state or due to episode limit
         :param active_masks: (np.ndarray) denotes whether an agent is active or dead in the env.
@@ -191,8 +191,9 @@ class MOSharedReplayBuffer(object):
         self.rnn_states_critic[self.step + 1] = rnn_states_critic.copy()
         self.actions[self.step] = actions.copy()
         self.action_log_probs[self.step] = action_log_probs.copy()
-        self.objective_preds[self.step] = value_preds.copy()
-        self.objectives[self.step] = rewards.copy()
+        for i in range(self.n_objective):
+            self.objective_preds[i][self.step] = objective_preds[i].copy()
+            self.objectives[i][self.step] = objectives[i].copy()
         self.masks[self.step + 1] = masks.copy()
         if bad_masks is not None:
             self.bad_masks[self.step + 1] = bad_masks.copy()
