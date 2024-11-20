@@ -264,7 +264,7 @@ class MOSharedReplayBuffer(object):
         :param num_mini_batch: (int) number of minibatches to split the batch into.
         :param mini_batch_size: (int) number of samples in each minibatch.
         """
-        episode_length, n_rollout_threads, num_agents = self.objectives.shape[0:3]
+        episode_length, n_rollout_threads, num_agents = self.objectives[0].shape[0:3]
         batch_size = n_rollout_threads * episode_length
 
         if mini_batch_size is None:
@@ -295,18 +295,25 @@ class MOSharedReplayBuffer(object):
         if self.available_actions is not None:
             available_actions = self.available_actions[:-1].reshape(-1, *self.available_actions.shape[2:])
             available_actions = available_actions[rows, cols]
-        value_preds = self.objective_preds[:-1].reshape(-1, *self.objective_preds.shape[2:])
-        value_preds = value_preds[rows, cols]
-        returns = self.returns[:-1].reshape(-1, *self.returns.shape[2:])
-        returns = returns[rows, cols]
+        objective_value_preds = self.objective_preds[:-1].reshape(-1, *self.objective_preds.shape[2:])
+        objective_value_preds = objective_value_preds[rows, cols]
         masks = self.masks[:-1].reshape(-1, *self.masks.shape[2:])
         masks = masks[rows, cols]
         active_masks = self.active_masks[:-1].reshape(-1, *self.active_masks.shape[2:])
         active_masks = active_masks[rows, cols]
         action_log_probs = self.action_log_probs.reshape(-1, *self.action_log_probs.shape[2:])
         action_log_probs = action_log_probs[rows, cols]
-        advantages = advantages.reshape(-1, *advantages.shape[2:])
-        advantages = advantages[rows, cols]
+        
+        returns = []
+        advantages = []
+        for i_objective in range(self.n_objective):
+            obj_i_returns = self.returns[i_objective][:-1].reshape(-1, *self.returns[i_objective].shape[2:])
+            obj_i_returns = obj_i_returns[rows, cols]
+            returns.append(obj_i_returns)
+            
+            obj_i_advantages = advantages[i_objective].reshape(-1, *advantages[i_objective].shape[2:])
+            obj_i_advantages = obj_i_advantages[rows, cols]
+            advantages.append(obj_i_advantages)
 
         for indices in sampler:
             # [L,T,N,Dim]-->[L*T,N,Dim]-->[index,N,Dim]-->[index*N, Dim]
@@ -319,16 +326,21 @@ class MOSharedReplayBuffer(object):
                 available_actions_batch = available_actions[indices].reshape(-1, *available_actions.shape[2:])
             else:
                 available_actions_batch = None
-            value_preds_batch = value_preds[indices].reshape(-1, *value_preds.shape[2:])
-            return_batch = returns[indices].reshape(-1, *returns.shape[2:])
+            objective_value_preds_batch = []
+            return_batch = []
+            for i_objective in range(self.n_objective):
+                objective_value_preds_batch.append(objective_value_preds[indices].reshape(-1, *objective_value_preds.shape[2:]))
+                return_batch.append(returns[indices].reshape(-1, *returns.shape[2:]))
             masks_batch = masks[indices].reshape(-1, *masks.shape[2:])
             active_masks_batch = active_masks[indices].reshape(-1, *active_masks.shape[2:])
             old_action_log_probs_batch = action_log_probs[indices].reshape(-1, *action_log_probs.shape[2:])
             if advantages is None:
                 adv_targ = None
             else:
-                adv_targ = advantages[indices].reshape(-1, *advantages.shape[2:])
+                adv_targ = []
+                for i_objective in range(self.n_objective):
+                    adv_targ.append(advantages[i_objective][indices].reshape(-1, *advantages[i_objective].shape[2:]))
 
             yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, \
-                  value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, \
+                  objective_value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, \
                   adv_targ, available_actions_batch
