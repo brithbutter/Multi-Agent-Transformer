@@ -5,6 +5,7 @@ from mat.utils.util import get_shape_from_obs_space, get_shape_from_act_space
 from mat.algorithms.utils.util import check
 from mat.algorithms.mat.algorithm.ma_transformer import MultiAgentTransformer
 
+MULTI_OBJECTIVE = False
 
 class TransformerPolicy:
     """
@@ -61,6 +62,9 @@ class TransformerPolicy:
             from mat.algorithms.mat.algorithm.mat_decoder import MultiAgentDecoder as MAT
         elif self.algorithm_name == "mat_encoder":
             from mat.algorithms.mat.algorithm.mat_encoder import MultiAgentEncoder as MAT
+        elif self.algorithm_name == "momat":
+            from mat.algorithms.momat.moma_transformer import MOMultiAgentTransformer as MAT
+            MULTI_OBJECTIVE = True
         else:
             raise NotImplementedError
 
@@ -153,10 +157,14 @@ class TransformerPolicy:
         obs = obs.reshape(-1, self.num_agents, self.obs_dim)
         if available_actions is not None:
             available_actions = available_actions.reshape(-1, self.num_agents, self.act_dim)
-
-        values = self.transformer.get_values(cent_obs, obs, available_actions)
-
-        values = values.view(-1, 1)
+        if MULTI_OBJECTIVE:
+            values = []
+            values_list = self.transformer.get_values(cent_obs, obs, available_actions)
+            for value in values_list:
+                values.append(value.view(-1,1))
+        else:
+            values = self.transformer.get_values(cent_obs, obs, available_actions)
+            values = values.view(-1, 1)
 
         return values
 
@@ -187,8 +195,15 @@ class TransformerPolicy:
         action_log_probs, values, entropy = self.transformer(cent_obs, obs, actions, available_actions)
 
         action_log_probs = action_log_probs.view(-1, self.act_num)
-        values = values.view(-1, 1)
         entropy = entropy.view(-1, self.act_num)
+        
+        if MULTI_OBJECTIVE:
+            values_list = values
+            values = []
+            for value in values_list:
+                values.append(value.view(-1,1))
+        else:
+            values = values.view(-1, 1)
 
         if self._use_policy_active_masks and active_masks is not None:
             entropy = (entropy*active_masks).sum()/active_masks.sum()
