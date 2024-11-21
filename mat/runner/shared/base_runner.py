@@ -193,7 +193,7 @@ class Runner(object):
                                             share_observation_space,
                                             self.envs.action_space[0],
                                             self.all_args.env_name)
-        else:
+        elif self.all_args.algorithm_name == "mat":
             from mat.utils.shared_buffer import SharedReplayBuffer
             from mat.algorithms.mat.mat_trainer import MATTrainer as TrainAlgo
             from mat.algorithms.mat.algorithm.transformer_policy import TransformerPolicy as Policy
@@ -217,6 +217,27 @@ class Runner(object):
                                             self.envs.action_space[0],
                                             self.all_args.env_name)
             # print("num_agents: ",self.num_agents,"\t obs",self.envs.observation_space[0],"\t cent_obs",share_observation_space,"act_dim",self.envs.action_space[0])
+        elif self.all_args.algorithm_name == "momat":
+            from mat.utils.mo_shared_buffer import MOSharedReplayBuffer
+            from mat.algorithms.momat.momat_trainer import MOMATTrainer as TrainAlgo
+            from mat.algorithms.mat.algorithm.transformer_policy import TransformerPolicy as Policy
+            # policy network
+            self.policy = Policy(self.all_args,
+                                self.envs.observation_space[0],
+                                share_observation_space,
+                                self.envs.action_space[0],
+                                self.num_agents,
+                                device=self.device)
+            # algorithm
+            self.trainer = TrainAlgo(self.all_args, self.policy, self.num_agents, device=self.device)
+            
+            # buffer
+            self.buffer = MOSharedReplayBuffer(self.all_args,
+                                            self.num_agents,
+                                            self.envs.observation_space[0],
+                                            share_observation_space,
+                                            self.envs.action_space[0],
+                                            self.all_args.env_name)
         if self.model_dir is not None:
             self.restore(self.model_dir)
 
