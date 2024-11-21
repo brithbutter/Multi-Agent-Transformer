@@ -403,6 +403,7 @@ class Runner(object):
                 self.buffer[agent_id].after_update()
             return train_infos
         else:
+            # Impolemented for ppo, mat, momat
             self.trainer.prep_training()
             # self.buffer.save()
             train_infos = self.trainer.train(self.buffer)      
