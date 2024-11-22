@@ -33,6 +33,8 @@ class Random_Policy:
             if act_space.semi_index != 0:
                 self.action_type = 'Semi_Discrete'
                 semi_index = act_space.semi_index
+            elif act_space.multi_discrete:
+                self.action_type = 'Multi_Discrete'
             else:
                 self.action_type = 'Discrete'
         else:
