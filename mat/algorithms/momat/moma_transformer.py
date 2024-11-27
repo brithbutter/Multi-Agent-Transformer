@@ -133,7 +133,8 @@ class Encoder(nn.Module):
 
         self.ln = nn.LayerNorm(n_embd)
         self.blocks = nn.Sequential(*[EncodeBlock(n_embd, n_head, n_agent) for _ in range(n_block)])
-        self.heads = []
+        self.heads = nn.ModuleList()
+        
         for i_objective in range(n_objective):
             self.heads.append(nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
                                 init_(nn.Linear(n_embd, 1))))
@@ -152,7 +153,8 @@ class Encoder(nn.Module):
         v_locs = []
         for head in self.heads:
             v_locs.append(head(rep))
-
+        v_locs = torch.cat(v_locs, dim=-1)
+        # v_locs = torch.stack(v_locs,2)
         return v_locs, rep
 
 
@@ -301,7 +303,7 @@ class MOMultiAgentTransformer(nn.Module):
             available_actions = check(available_actions).to(**self.tpdv)
 
         batch_size = np.shape(obs)[0]
-        v_loc, obs_rep = self.encoder(state, obs)
+        v_locs, obs_rep = self.encoder(state, obs)
         
         if self.action_type == "Discrete":
             output_action, output_action_log = discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
@@ -316,7 +318,7 @@ class MOMultiAgentTransformer(nn.Module):
             output_action, output_action_log = continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                             self.n_agent, self.action_dim, self.tpdv,
                                                                             deterministic)
-        return output_action, output_action_log, v_loc
+        return output_action, output_action_log, v_locs
 
     def get_values(self, state, obs, available_actions=None):
         # state unused

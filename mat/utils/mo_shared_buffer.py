@@ -64,16 +64,10 @@ class MOSharedReplayBuffer(object):
 
 
         # Reward Buffer
-        self.objectives = []
-        self.objective_preds = []
-        self.returns = []
-        self.advantages = []
-        for i in range(n_objective):
-            self.objectives.append(np.zeros((self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32))
-            single_obj_value_pred = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
-            self.objective_preds.append(single_obj_value_pred)
-            self.returns.append(np.zeros_like(single_obj_value_pred))
-            self.advantages.append(np.zeros((self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32))
+        self.objectives = np.zeros((self.episode_length, self.n_rollout_threads, num_agents, self.n_objective), dtype=np.float32)
+        self.objective_preds = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents,self.n_objective), dtype=np.float32)
+        self.returns = np.zeros_like(self.objective_preds)
+        self.advantages = np.zeros((self.episode_length, self.n_rollout_threads, num_agents,self.n_objective), dtype=np.float32)
         
         
         
@@ -93,7 +87,7 @@ class MOSharedReplayBuffer(object):
             (self.episode_length, self.n_rollout_threads, num_agents, act_shape), dtype=np.float32)
         
         
-        self.masks = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+        self.masks = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, self.n_objective), dtype=np.float32)
         self.bad_masks = np.ones_like(self.masks)
         self.active_masks = np.ones_like(self.masks)
 
@@ -155,9 +149,8 @@ class MOSharedReplayBuffer(object):
         self.rnn_states_critic[self.step + 1] = rnn_states_critic.copy()
         self.actions[self.step] = actions.copy()
         self.action_log_probs[self.step] = action_log_probs.copy()
-        for i in range(self.n_objective):
-            self.objective_preds[i][self.step] = objective_preds[i].copy()
-            self.objectives[i][self.step] = objectives[i].copy()
+        self.objective_preds[self.step] = objective_preds.copy()
+        self.objectives[self.step] = objectives.copy()
         self.masks[self.step + 1] = masks.copy()
         if bad_masks is not None:
             self.bad_masks[self.step + 1] = bad_masks.copy()
@@ -229,33 +222,33 @@ class MOSharedReplayBuffer(object):
         :param next_value: (np.ndarray) value predictions for the step after the last episode step.
         :param value_normalizer: (PopArt) If not None, PopArt value normalizer instance.
         """
-        for i_objective in range(self.n_objective):
-            self.objective_preds[i_objective][-1] = next_objective_value[i_objective]
-            gae = 0
-            for step in reversed(range(self.objectives[i_objective].shape[0])):
-                if self._use_popart or self._use_valuenorm:
-                    delta = self.objectives[i_objective][step] + self.gamma * value_normalizer.denormalize(
-                        self.objective_preds[i_objective][step + 1]) * self.masks[step + 1] \
-                            - value_normalizer.denormalize(self.objective_preds[i_objective][step])
-                    gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
+        self.objective_preds[-1] = next_objective_value
+        gae = 0
+        # Check Normalize
+        for step in reversed(range(self.objectives.shape[0])):
+            if self._use_popart or self._use_valuenorm:
+                delta = self.objectives[step] + self.gamma * value_normalizer.denormalize(
+                    self.objective_preds[step + 1]) * self.masks[step + 1] \
+                        - value_normalizer.denormalize(self.objective_preds[step])
+                gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
 
-                    # here is a patch for mpe, whose last step is timeout instead of terminate
-                    if self.env_name == "MPE" and step == self.objectives[i_objective].shape[0] - 1:
-                        gae = 0
+                # here is a patch for mpe, whose last step is timeout instead of terminate
+                if self.env_name == "MPE" and step == self.objectives.shape[0] - 1:
+                    gae = 0
 
-                    self.advantages[i_objective][step] = gae
-                    self.returns[i_objective][step] = gae + value_normalizer.denormalize(self.objective_preds[i_objective][step])
-                else:
-                    delta = self.objectives[i_objective][step] + self.gamma * self.objective_preds[i_objective][step + 1] * \
-                            self.masks[step + 1] - self.objective_preds[i_objective][step]
-                    gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
+                self.advantages[step] = gae
+                self.returns[step] = gae + value_normalizer.denormalize(self.objective_preds[step])
+            else:
+                delta = self.objectives[step] + self.gamma * self.objective_preds[step + 1] * \
+                        self.masks[step + 1] - self.objective_preds[step]
+                gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
 
-                    # here is a patch for mpe, whose last step is timeout instead of terminate
-                    if self.env_name == "MPE" and step == self.objectives[i_objective].shape[0] - 1:
-                        gae = 0
+                # here is a patch for mpe, whose last step is timeout instead of terminate
+                if self.env_name == "MPE" and step == self.objectives.shape[0] - 1:
+                    gae = 0
 
-                    self.advantages[i_objective][step] = gae
-                    self.returns[i_objective][step] = gae + self.objective_preds[i_objective][step]
+                self.advantages[step] = gae
+                self.returns[step] = gae + self.objective_preds[step]
 
     def feed_forward_generator_transformer(self, advantages, num_mini_batch=None, mini_batch_size=None):
         """
@@ -264,7 +257,7 @@ class MOSharedReplayBuffer(object):
         :param num_mini_batch: (int) number of minibatches to split the batch into.
         :param mini_batch_size: (int) number of samples in each minibatch.
         """
-        episode_length, n_rollout_threads, num_agents = self.objectives[0].shape[0:3]
+        episode_length, n_rollout_threads, num_agents = self.objectives.shape[0:3]
         batch_size = n_rollout_threads * episode_length
 
         if mini_batch_size is None:
@@ -304,16 +297,8 @@ class MOSharedReplayBuffer(object):
         action_log_probs = self.action_log_probs.reshape(-1, *self.action_log_probs.shape[2:])
         action_log_probs = action_log_probs[rows, cols]
         
-        returns = []
-        advantages = []
-        for i_objective in range(self.n_objective):
-            obj_i_returns = self.returns[i_objective][:-1].reshape(-1, *self.returns[i_objective].shape[2:])
-            obj_i_returns = obj_i_returns[rows, cols]
-            returns.append(obj_i_returns)
-            
-            obj_i_advantages = advantages[i_objective].reshape(-1, *advantages[i_objective].shape[2:])
-            obj_i_advantages = obj_i_advantages[rows, cols]
-            advantages.append(obj_i_advantages)
+        returns = self.returns[:-1].reshape(-1, *self.returns.shape[2:])[rows, cols]
+        advantages = advantages.reshape(-1, *advantages.shape[2:])[rows, cols]
 
         for indices in sampler:
             # [L,T,N,Dim]-->[L*T,N,Dim]-->[index,N,Dim]-->[index*N, Dim]
@@ -326,20 +311,15 @@ class MOSharedReplayBuffer(object):
                 available_actions_batch = available_actions[indices].reshape(-1, *available_actions.shape[2:])
             else:
                 available_actions_batch = None
-            objective_value_preds_batch = []
-            return_batch = []
-            for i_objective in range(self.n_objective):
-                objective_value_preds_batch.append(objective_value_preds[indices].reshape(-1, *objective_value_preds.shape[2:]))
-                return_batch.append(returns[indices].reshape(-1, *returns.shape[2:]))
+            objective_value_preds_batch = objective_value_preds[indices].reshape(-1, *objective_value_preds.shape[2:])
+            return_batch = returns[indices].reshape(-1, *returns.shape[2:])
             masks_batch = masks[indices].reshape(-1, *masks.shape[2:])
             active_masks_batch = active_masks[indices].reshape(-1, *active_masks.shape[2:])
             old_action_log_probs_batch = action_log_probs[indices].reshape(-1, *action_log_probs.shape[2:])
             if advantages is None:
                 adv_targ = None
             else:
-                adv_targ = []
-                for i_objective in range(self.n_objective):
-                    adv_targ.append(advantages[i_objective][indices].reshape(-1, *advantages[i_objective].shape[2:]))
+                adv_targ = advantages[indices].reshape(-1, *advantages.shape[2:])
 
             yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, \
                   objective_value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, \

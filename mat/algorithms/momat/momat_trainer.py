@@ -115,35 +115,32 @@ class MOMATTrainer:
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         
         active_masks_batch = check(active_masks_batch).to(**self.tpdv)
-        adv_targs = []
-        value_preds_batchs = []
-        return_batchs = []
-        for i_objective in range(self.n_objective):
-            adv_targs.append(check(adv_targ[i_objective]).to(**self.tpdv))
-            value_preds_batchs.append((value_preds_batchs[i_objective]).to(**self.tpdv))
-            return_batchs.append(check(return_batchs[i_objective]).to(**self.tpdv))
+        adv_targs = check(adv_targs).to(**self.tpdv)
+        value_preds_batchs = check(value_preds_batchs).to(**self.tpdv)
+        return_batchs = check(return_batchs).to(**self.tpdv)
 
         # Reshape to do in a single forward pass for all steps
         values, action_log_probs, dist_entropy = self.policy.evaluate_actions(share_obs_batch,
-                                                                              obs_batch, 
-                                                                              rnn_states_batch, 
-                                                                              rnn_states_critic_batch, 
-                                                                              actions_batch, 
-                                                                              masks_batch, 
-                                                                              available_actions_batch,
-                                                                              active_masks_batch)
+                                                                            obs_batch, 
+                                                                            rnn_states_batch, 
+                                                                            rnn_states_critic_batch, 
+                                                                            actions_batch, 
+                                                                            masks_batch, 
+                                                                            available_actions_batch,
+                                                                            active_masks_batch,
+                                                                            n_objective = self.n_objective)
         
-        policy_losses = []
-        value_losses = []
+        tot_policy_loss = 0
+        tot_value_loss = 0
         imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
         for i_objective in range(self.n_objective):
             # actor update
             
 
-            adv_targ = adv_targs[i_objective]
-            value_preds_batch = value_preds_batchs[i_objective]
-            return_batch = return_batchs[i_objective]
-            value = values[i_objective]
+            adv_targ = adv_targs[:,i_objective]
+            value_preds_batch = value_preds_batchs[:,i_objective]
+            return_batch = return_batchs[:,i_objective]
+            value = values[:,i_objective]
             surr1 = imp_weights * adv_targ
             surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
 
@@ -155,9 +152,15 @@ class MOMATTrainer:
                 policy_loss = -torch.sum(torch.min(surr1, surr2), dim=-1, keepdim=True).mean()
 
             # critic update
-            value_loss = self.cal_value_loss(value, value_preds_batch, return_batch, active_masks_batch)
+            value_loss = self.cal_value_loss(value, value_preds_batch, return_batch, active_masks_batch[:,i_objective])
+            if tot_policy_loss == 0:
+                tot_policy_loss = policy_loss
+                tot_value_loss = value_loss
+            else:
+                tot_policy_loss += policy_loss
+                tot_value_loss += value_loss
 
-        loss = torch.mean(policy_losses) - dist_entropy * self.entropy_coef + torch.mean(value_losses) * self.value_loss_coef
+        loss = (tot_policy_loss/self.n_objective) - dist_entropy * self.entropy_coef + (tot_value_loss/self.n_objective) * self.value_loss_coef
 
         self.policy.optimizer.zero_grad()
         loss.backward()
@@ -203,7 +206,8 @@ class MOMATTrainer:
                                                             np.concatenate(buffer.obs[-1]),
                                                             np.concatenate(buffer.rnn_states_critic[-1]),
                                                             np.concatenate(buffer.masks[-1]),
-                                                            np.concatenate(buffer.available_actions[-1]))
+                                                            np.concatenate(buffer.available_actions[-1]),
+                                                            n_objective = self.n_objective)
             next_values = np.array(np.split(_t2n(next_values), self.n_rollout_threads))
             buffer.compute_returns(next_values, self.value_normalizer)
             advantages_copy = buffer.advantages.copy()
