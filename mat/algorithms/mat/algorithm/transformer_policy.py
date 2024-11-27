@@ -5,7 +5,6 @@ from mat.utils.util import get_shape_from_obs_space, get_shape_from_act_space
 from mat.algorithms.utils.util import check
 from mat.algorithms.mat.algorithm.ma_transformer import MultiAgentTransformer
 
-MULTI_OBJECTIVE = False
 
 class TransformerPolicy:
     """
@@ -64,7 +63,7 @@ class TransformerPolicy:
             from mat.algorithms.mat.algorithm.mat_encoder import MultiAgentEncoder as MAT
         elif self.algorithm_name == "momat":
             from mat.algorithms.momat.moma_transformer import MOMultiAgentTransformer as MAT
-            MULTI_OBJECTIVE = True
+            
         else:
             raise NotImplementedError
 
@@ -104,7 +103,7 @@ class TransformerPolicy:
         update_linear_schedule(self.optimizer, episode, episodes, self.lr)
 
     def get_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, masks, available_actions=None,
-                    deterministic=False,stride = 2):
+                    deterministic=False,stride = 2,n_objective = 1):
         """
         Compute actions and value function predictions for the given inputs.
         :param cent_obs (np.ndarray): centralized input to the critic.
@@ -136,14 +135,14 @@ class TransformerPolicy:
 
         actions = actions.view(-1, self.act_num)
         action_log_probs = action_log_probs.view(-1, self.act_num)
-        values = values.view(-1, 1)
+        values = values.view(-1, n_objective)
 
         # unused, just for compatibility
         rnn_states_actor = check(rnn_states_actor).to(**self.tpdv)
         rnn_states_critic = check(rnn_states_critic).to(**self.tpdv)
         return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
 
-    def get_values(self, cent_obs, obs, rnn_states_critic, masks, available_actions=None):
+    def get_values(self, cent_obs, obs, rnn_states_critic, masks, available_actions=None,n_objective = 1):
         """
         Get value function predictions.
         :param cent_obs (np.ndarray): centralized input to the critic.
@@ -157,11 +156,9 @@ class TransformerPolicy:
         obs = obs.reshape(-1, self.num_agents, self.obs_dim)
         if available_actions is not None:
             available_actions = available_actions.reshape(-1, self.num_agents, self.act_dim)
-        if MULTI_OBJECTIVE:
-            values = []
-            values_list = self.transformer.get_values(cent_obs, obs, available_actions)
-            for value in values_list:
-                values.append(value.view(-1,1))
+        if n_objective>1:
+            values = self.transformer.get_values(cent_obs, obs, available_actions)
+            values = values.view(-1,n_objective)
         else:
             values = self.transformer.get_values(cent_obs, obs, available_actions)
             values = values.view(-1, 1)
@@ -169,7 +166,7 @@ class TransformerPolicy:
         return values
 
     def evaluate_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, actions, masks,
-                         available_actions=None, active_masks=None):
+                         available_actions=None, active_masks=None,n_objective = 1):
         """
         Get action logprobs / entropy and value function predictions for actor update.
         :param cent_obs (np.ndarray): centralized input to the critic.
@@ -197,13 +194,7 @@ class TransformerPolicy:
         action_log_probs = action_log_probs.view(-1, self.act_num)
         entropy = entropy.view(-1, self.act_num)
         
-        if MULTI_OBJECTIVE:
-            values_list = values
-            values = []
-            for value in values_list:
-                values.append(value.view(-1,1))
-        else:
-            values = values.view(-1, 1)
+        values = values.view(-1, n_objective)
 
         if self._use_policy_active_masks and active_masks is not None:
             entropy = (entropy*active_masks).sum()/active_masks.sum()
