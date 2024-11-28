@@ -148,9 +148,9 @@ class MOMATTrainer:
         
         for i_objective in range(self.n_objective):
             if self._use_policy_active_masks:
-                policy_loss = (-torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective]),
+                policy_loss = (-torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective])* active_masks_batch[:,i_objective],
                                         dim=-1,
-                                        keepdim=True) * active_masks_batch[:,i_objective]).sum() / active_masks_batch[:,i_objective].sum()
+                                        keepdim=True) ).sum() / active_masks_batch[:,i_objective].sum()
             else:
                 policy_loss = -torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective]), dim=-1, keepdim=True).mean()
             policy_losses.append(policy_loss)
