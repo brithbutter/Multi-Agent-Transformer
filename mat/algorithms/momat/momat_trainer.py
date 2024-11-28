@@ -49,7 +49,7 @@ class MOMATTrainer:
         self.dec_actor = args.dec_actor
         
         if self._use_valuenorm:
-            self.value_normalizer = ValueNorm(1, device=self.device)
+            self.value_normalizer = ValueNorm(self.n_objective, device=self.device)
         else:
             self.value_normalizer = None
 
@@ -131,36 +131,40 @@ class MOMATTrainer:
                                                                             n_objective = self.n_objective)
         
         tot_policy_loss = 0
+        policy_losses = []
         tot_value_loss = 0
+        value_losses = []
         imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
+        # actor update
+        
+
+        adv_targ = adv_targs
+        value_preds_batch = value_preds_batchs
+        return_batch = return_batchs
+        value = values
+        surr1 = imp_weights * adv_targ
+        surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
+        value_loss = self.cal_value_loss(value, value_preds_batch, return_batch, active_masks_batch)
+        
         for i_objective in range(self.n_objective):
-            # actor update
-            
-
-            adv_targ = adv_targs[:,i_objective]
-            value_preds_batch = value_preds_batchs[:,i_objective]
-            return_batch = return_batchs[:,i_objective]
-            value = values[:,i_objective]
-            surr1 = imp_weights * adv_targ
-            surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
-
             if self._use_policy_active_masks:
-                policy_loss = (-torch.sum(torch.min(surr1, surr2),
+                policy_loss = (-torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective]),
                                         dim=-1,
-                                        keepdim=True) * active_masks_batch).sum() / active_masks_batch.sum()
+                                        keepdim=True) * active_masks_batch[:,i_objective]).sum() / active_masks_batch[:,i_objective].sum()
             else:
-                policy_loss = -torch.sum(torch.min(surr1, surr2), dim=-1, keepdim=True).mean()
-
+                policy_loss = -torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective]), dim=-1, keepdim=True).mean()
+            policy_losses.append(policy_loss)
+            value_losses.append(value_loss)
             # critic update
-            value_loss = self.cal_value_loss(value, value_preds_batch, return_batch, active_masks_batch[:,i_objective])
+            
             if tot_policy_loss == 0:
                 tot_policy_loss = policy_loss
-                tot_value_loss = value_loss
+                # tot_value_loss = value_loss[:,i_objective]
             else:
                 tot_policy_loss += policy_loss
-                tot_value_loss += value_loss
+                # tot_value_loss += value_loss[:,i_objective]
 
-        loss = (tot_policy_loss/self.n_objective) - dist_entropy * self.entropy_coef + (tot_value_loss/self.n_objective) * self.value_loss_coef
+        loss = (tot_policy_loss/self.n_objective) - dist_entropy * self.entropy_coef + value_loss * self.value_loss_coef
 
         self.policy.optimizer.zero_grad()
         loss.backward()
@@ -172,7 +176,7 @@ class MOMATTrainer:
 
         self.policy.optimizer.step()
 
-        return value_loss, grad_norm, policy_loss, dist_entropy, grad_norm, imp_weights
+        return value_losses, grad_norm, policy_losses, dist_entropy, grad_norm, imp_weights
 
     def train(self, buffer):
         """
@@ -186,9 +190,9 @@ class MOMATTrainer:
         
 
         train_info = {}
-
-        train_info['value_loss'] = 0
-        train_info['policy_loss'] = 0
+        for i_objective in range(self.n_objective):
+            train_info['value_loss_{}'.format(i_objective)] = 0
+            train_info['policy_loss_{}'.format(i_objective)] = 0
         train_info['dist_entropy'] = 0
         train_info['actor_grad_norm'] = 0
         train_info['critic_grad_norm'] = 0
@@ -219,11 +223,12 @@ class MOMATTrainer:
 
             for sample in data_generator:
 
-                value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights \
+                value_losses, critic_grad_norm, policy_losses, dist_entropy, actor_grad_norm, imp_weights \
                     = self.ppo_update(sample)
 
-                train_info['value_loss'] += value_loss.item()
-                train_info['policy_loss'] += policy_loss.item()
+                for i_objective in range(self.n_objective):
+                    train_info['value_loss_{}'.format(i_objective)] += value_losses[i_objective].item()
+                    train_info['policy_loss_{}'.format(i_objective)] += policy_losses[i_objective].item()
                 train_info['dist_entropy'] += dist_entropy.item()
                 train_info['actor_grad_norm'] += actor_grad_norm
                 train_info['critic_grad_norm'] += critic_grad_norm
