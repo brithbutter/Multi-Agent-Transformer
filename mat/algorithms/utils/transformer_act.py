@@ -215,3 +215,61 @@ def continuous_parallel_act(decoder, obs_rep, obs, action, batch_size, n_agent, 
     action_log = distri.log_prob(action)
     entropy = distri.entropy()
     return action_log, entropy
+
+def available_continuous_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent, action_dim, tpdv,
+                                available_actions=None ,deterministic=False):
+    shifted_action = torch.zeros((batch_size, n_agent, action_dim)).to(**tpdv)
+    output_action = torch.zeros((batch_size, n_agent, action_dim), dtype=torch.float32)
+    output_action_log = torch.zeros_like(output_action, dtype=torch.float32)
+
+    
+
+    for i in range(n_agent):
+        if available_actions is not None:
+            ava_a = available_actions[:, i, :]
+        else:
+            ava_a = 1
+            
+        
+        if ava_a == 0:
+            # In continous action space, the unavailable workers can only perform 0.
+            # Since this action 0 is deterministic, the log_prob is set to 0 indicating probability = 1.
+            action = 0
+            action_log = 0
+        else:
+            act_mean = decoder(shifted_action, obs_rep, obs)[:, i, :]
+            action_std = torch.sigmoid(decoder.log_std) * 0.5
+            # log_std = torch.zeros_like(act_mean).to(**tpdv) + decoder.log_std
+            # distri = Normal(act_mean, log_std.exp())
+            distri = Normal(act_mean, action_std)
+            action = act_mean if deterministic else distri.sample()
+            action_log = distri.log_prob(action)
+
+        output_action[:, i, :] = action
+        output_action_log[:, i, :] = action_log
+        if i + 1 < n_agent:
+            shifted_action[:, i + 1, :] = action
+
+        # print("act_mean: ", act_mean)
+        # print("action: ", action)
+
+    return output_action, output_action_log
+
+def available_continuous_parallel_act(decoder, obs_rep, obs, action, batch_size, n_agent, action_dim, tpdv,available_actions=None):
+    shifted_action = torch.zeros((batch_size, n_agent, action_dim)).to(**tpdv)
+    shifted_action[:, 1:, :] = action[:, :-1, :]
+
+    act_mean = decoder(shifted_action, obs_rep, obs)
+    action_std = torch.sigmoid(decoder.log_std) * 0.5
+    distri = Normal(act_mean, action_std)
+
+    # log_std = torch.zeros_like(act_mean).to(**tpdv) + decoder.log_std
+    # distri = Normal(act_mean, log_std.exp())
+    
+    # Generate log_prob normally
+    action_log = distri.log_prob(action)
+    # Setting log_prob to extremely small negative value to present the low prob of generated action
+    if available_actions is not None:
+        action_log[available_actions == 0] = -1e10
+    entropy = distri.entropy()
+    return action_log, entropy

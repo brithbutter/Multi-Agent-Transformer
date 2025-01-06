@@ -12,6 +12,8 @@ from mat.algorithms.utils.transformer_act import semi_discrete_autoregreesive_ac
 from mat.algorithms.utils.transformer_act import semi_discrete_parallel_act
 from mat.algorithms.utils.transformer_act import continuous_autoregreesive_act
 from mat.algorithms.utils.transformer_act import continuous_parallel_act
+from mat.algorithms.utils.transformer_act import available_continuous_autoregreesive_act
+from mat.algorithms.utils.transformer_act import available_continuous_parallel_act
 
 def init_(m, gain=0.01, activate=False):
     if activate:
@@ -286,9 +288,10 @@ class MOMultiAgentTransformer(nn.Module):
         elif self.action_type == "Semi_Discrete":
             action_log, entropy = semi_discrete_parallel_act(self.decoder, obs_rep, obs, action, batch_size,
                                                         self.n_agent, self.action_dim, self.tpdv, available_actions,semi_index=self.semi_index)
+        elif self.action_type == "Continous":
+            action_log, entropy = continuous_parallel_act(self.decoder, obs_rep, obs, action, batch_size,self.n_agent, self.action_dim, self.tpdv)
         else:
-            action_log, entropy = continuous_parallel_act(self.decoder, obs_rep, obs, action, batch_size,
-                                                          self.n_agent, self.action_dim, self.tpdv)
+            action_log, entropy = available_continuous_parallel_act(self.decoder, obs_rep, obs, action, batch_size,self.n_agent, self.action_dim, self.tpdv, available_actions=available_actions)
 
         return action_log, v_locs, entropy
 
@@ -314,10 +317,14 @@ class MOMultiAgentTransformer(nn.Module):
                                                                                 self.n_agent, self.action_dim, self.tpdv,
                                                                                 available_actions, deterministic,semi_index=self.semi_index,stride=stride)
             
-        else:
+        elif self.action_type == "Continous":
             output_action, output_action_log = continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                             self.n_agent, self.action_dim, self.tpdv,
                                                                             deterministic)
+        else:
+            output_action, output_action_log = available_continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
+                                                            self.n_agent, self.action_dim, self.tpdv,
+                                                            available_actions,deterministic)
         return output_action, output_action_log, v_locs
 
     def get_values(self, state, obs, available_actions=None):
