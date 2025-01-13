@@ -225,25 +225,20 @@ def available_continuous_autoregreesive_act(decoder, obs_rep, obs, batch_size, n
     
 
     for i in range(n_agent):
+        act_mean = decoder(shifted_action, obs_rep, obs)[:, i, :]
+        action_std = torch.sigmoid(decoder.log_std*0.1) 
+        # log_std = torch.zeros_like(act_mean).to(**tpdv) + decoder.log_std
+        # distri = Normal(act_mean, log_std.exp())
+        
+        distri = Normal(act_mean, action_std)
+        action = act_mean if deterministic else distri.sample()
+        action_log = distri.log_prob(action)
         if available_actions is not None:
             ava_a = available_actions[:, i, :]
-        else:
-            ava_a = 1
-            
-        
-        if ava_a == 0:
             # In continous action space, the unavailable workers can only perform 0.
             # Since this action 0 is deterministic, the log_prob is set to 0 indicating probability = 1.
-            action = 0
-            action_log = 0
-        else:
-            act_mean = decoder(shifted_action, obs_rep, obs)[:, i, :]
-            action_std = torch.sigmoid(decoder.log_std) * 0.5
-            # log_std = torch.zeros_like(act_mean).to(**tpdv) + decoder.log_std
-            # distri = Normal(act_mean, log_std.exp())
-            distri = Normal(act_mean, action_std)
-            action = act_mean if deterministic else distri.sample()
-            action_log = distri.log_prob(action)
+            action[ava_a == 0] = 0
+            action_log[ava_a == 0] = 0
 
         output_action[:, i, :] = action
         output_action_log[:, i, :] = action_log
@@ -260,7 +255,7 @@ def available_continuous_parallel_act(decoder, obs_rep, obs, action, batch_size,
     shifted_action[:, 1:, :] = action[:, :-1, :]
 
     act_mean = decoder(shifted_action, obs_rep, obs)
-    action_std = torch.sigmoid(decoder.log_std) * 0.5
+    action_std = torch.sigmoid(decoder.log_std*0.1)
     distri = Normal(act_mean, action_std)
 
     # log_std = torch.zeros_like(act_mean).to(**tpdv) + decoder.log_std
@@ -269,7 +264,7 @@ def available_continuous_parallel_act(decoder, obs_rep, obs, action, batch_size,
     # Generate log_prob normally
     action_log = distri.log_prob(action)
     # Setting log_prob to extremely small negative value to present the low prob of generated action
-    if available_actions is not None:
-        action_log[available_actions == 0] = -1e10
+    # if available_actions is not None:
+        # action_log[available_actions == 0] = -1e10
     entropy = distri.entropy()
     return action_log, entropy

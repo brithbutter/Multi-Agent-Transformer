@@ -73,7 +73,7 @@ class MOSharedReplayBuffer(object):
         
 
         # Action Buffer
-        if act_space.__class__.__name__ == 'Discrete' or act_space.__class__.__name__ == 'Action_Space' :
+        if act_space.__class__.__name__ == 'Discrete' or act_space.__class__.__name__ == 'Action_Space' or act_space.__class__.__name__ == 'Available_Continous_Space':
             self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, act_space.n),
                                              dtype=np.float32)
         else:

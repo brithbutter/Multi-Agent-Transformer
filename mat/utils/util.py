@@ -46,6 +46,8 @@ def get_shape_from_act_space(act_space):
             act_shape = act_space.n
         else:
             act_shape = 1
+    elif act_space.__class__.__name__ == 'Available_Continous_Space':
+        act_shape = act_space.shape
     elif act_space.__class__.__name__ == "MultiDiscrete":
         act_shape = act_space.shape
     elif act_space.__class__.__name__ == "Box":
