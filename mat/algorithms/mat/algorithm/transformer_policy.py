@@ -33,6 +33,8 @@ class TransformerPolicy:
                 semi_index = act_space.semi_index
             else:
                 self.action_type = 'Discrete'
+        elif act_space.__class__.__name__ == 'Available_Continous_Space':
+            self.action_type = 'Available_Continous'
         else:
             self.action_type = 'Discrete'
 
@@ -40,6 +42,9 @@ class TransformerPolicy:
         self.share_obs_dim = get_shape_from_obs_space(cent_obs_space)[0]
         if self.action_type == 'Discrete' or self.action_type == 'Semi_Discrete':
             self.act_dim = act_space.n
+            self.act_num = 1
+        elif self.action_type == "Available_Continous":
+            self.act_dim = act_space.shape
             self.act_num = 1
         else:
             print("act high: ", act_space.high)
