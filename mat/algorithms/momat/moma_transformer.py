@@ -197,15 +197,18 @@ class Decoder(nn.Module):
             # self.agent_id_emb = nn.Parameter(torch.zeros(1, n_agent, n_embd))
             # This difference is because the output dim different from the discrete and continous representation.
             if action_type == 'Discrete' or action_type == 'Semi_Discrete'  :
-                self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim + 1, n_embd, bias=False), activate=True),
-                                                    nn.GELU())
+                self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim + 1, n_embd, bias=False), activate=True),nn.GELU())
             else:
                 self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim, n_embd), activate=True), nn.GELU())
             self.obs_encoder = nn.Sequential(nn.LayerNorm(obs_dim),
                                             init_(nn.Linear(obs_dim, n_embd), activate=True), nn.GELU())
             self.ln = nn.LayerNorm(n_embd)
             self.blocks = nn.Sequential(*[DecodeBlock(n_embd, n_head, n_agent) for _ in range(n_block)])
-            self.head = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
+            if action_type == "Available_Continous":
+                self.head = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
+                                    init_(nn.Linear(n_embd, action_dim)),nn.Sigmoid())
+            else:
+                self.head = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
                                     init_(nn.Linear(n_embd, action_dim)))
 
     def zero_std(self, device):
@@ -290,7 +293,7 @@ class MOMultiAgentTransformer(nn.Module):
                                                         self.n_agent, self.action_dim, self.tpdv, available_actions,semi_index=self.semi_index)
         elif self.action_type == "Continous":
             action_log, entropy = continuous_parallel_act(self.decoder, obs_rep, obs, action, batch_size,self.n_agent, self.action_dim, self.tpdv)
-        else:
+        elif self.action_type == "Available_Continous":
             action_log, entropy = available_continuous_parallel_act(self.decoder, obs_rep, obs, action, batch_size,self.n_agent, self.action_dim, self.tpdv, available_actions=available_actions)
 
         return action_log, v_locs, entropy

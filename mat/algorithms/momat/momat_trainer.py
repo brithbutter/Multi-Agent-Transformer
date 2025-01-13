@@ -145,7 +145,7 @@ class MOMATTrainer:
         surr1 = imp_weights * adv_targ
         surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
         value_loss = self.cal_value_loss(value, value_preds_batch, return_batch, active_masks_batch)
-        
+        co_o = [0.9,0.1]
         for i_objective in range(self.n_objective):
             if self._use_policy_active_masks:
                 policy_loss = (-torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective])* active_masks_batch[:,i_objective],
@@ -158,10 +158,10 @@ class MOMATTrainer:
             # critic update
             
             if tot_policy_loss == 0:
-                tot_policy_loss = policy_loss
+                tot_policy_loss = policy_loss*co_o[i_objective]
                 # tot_value_loss = value_loss[:,i_objective]
             else:
-                tot_policy_loss += policy_loss
+                tot_policy_loss += policy_loss*co_o[i_objective]
                 # tot_value_loss += value_loss[:,i_objective]
 
         loss = (tot_policy_loss/self.n_objective) - dist_entropy * self.entropy_coef + value_loss * self.value_loss_coef
