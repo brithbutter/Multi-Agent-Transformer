@@ -93,7 +93,7 @@ class MOSharedReplayBuffer(object):
 
         self.step = 0
     
-    def save(self,file_name = "shared_buffer.npy"):
+    def save(self,file_name = "mo_shared_buffer.npy"):
         with open(file_name,"wb") as writter:
             np.save(writter,self.share_obs)
             np.save(writter,self.obs)
@@ -108,7 +108,7 @@ class MOSharedReplayBuffer(object):
             for single_obj_rewards in self.objectives:
                 np.save(writter,single_obj_rewards)
 
-    def load(self,file_name = "shared_buffer.npy"):
+    def load(self,file_name = "mo_shared_buffer.npy"):
         with open(file_name,"wb") as reader:
             self.share_obs = np.load(reader)
             self.obs = np.load(reader)

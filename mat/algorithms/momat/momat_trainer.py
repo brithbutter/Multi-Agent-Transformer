@@ -46,6 +46,7 @@ class MOMATTrainer:
         self._use_valuenorm = args.use_valuenorm
         self._use_value_active_masks = args.use_value_active_masks
         self._use_policy_active_masks = args.use_policy_active_masks
+        self._use_actor_masks = args.use_actor_masks
         self.dec_actor = args.dec_actor
         
         if self._use_valuenorm:
@@ -138,6 +139,7 @@ class MOMATTrainer:
         # actor update
         
 
+        available_actions_batch = check(available_actions_batch).to(**self.tpdv)
         adv_targ = adv_targs
         value_preds_batch = value_preds_batchs
         return_batch = return_batchs
@@ -145,9 +147,13 @@ class MOMATTrainer:
         surr1 = imp_weights * adv_targ
         surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
         value_loss = self.cal_value_loss(value, value_preds_batch, return_batch, active_masks_batch)
-        co_o = [0.9,0.1]
+        co_o = [0.99,0.01]
         for i_objective in range(self.n_objective):
-            if self._use_policy_active_masks:
+            if self._use_actor_masks:
+                policy_loss = (-torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective])* available_actions_batch[:],
+                                        dim=-1,
+                                        keepdim=True) ).sum() / available_actions_batch[:].sum() 
+            elif self._use_policy_active_masks:
                 policy_loss = (-torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective])* active_masks_batch[:,i_objective],
                                         dim=-1,
                                         keepdim=True) ).sum() / active_masks_batch[:,i_objective].sum()

@@ -269,6 +269,8 @@ def get_config():
                         action='store_false', default=True, help="by default True, whether to mask useless data in value loss.")
     parser.add_argument("--use_policy_active_masks",
                         action='store_false', default=True, help="by default True, whether to mask useless data in policy loss.")
+    parser.add_argument("--use_actor_masks",
+                        action='store_true', default=False, help="by default False, whether to mask disabled actor in value loss.")
     parser.add_argument("--huber_delta", type=float, default=10.0, help=" coefficience of huber loss.")
 
     # run parameters
