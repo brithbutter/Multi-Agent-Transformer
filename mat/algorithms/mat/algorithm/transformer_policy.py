@@ -68,7 +68,8 @@ class TransformerPolicy:
             from mat.algorithms.mat.algorithm.mat_encoder import MultiAgentEncoder as MAT
         elif self.algorithm_name == "momat":
             from mat.algorithms.momat.moma_transformer import MOMultiAgentTransformer as MAT
-            
+        elif self.algorithm_name == "dmomat":
+            from mat.algorithms.dmomat.dmoma_transformer import DMOMultiAgentTransformer as MAT
         else:
             raise NotImplementedError
 

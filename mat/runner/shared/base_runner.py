@@ -239,6 +239,27 @@ class Runner(object):
                                             share_observation_space,
                                             self.envs.action_space[0],
                                             self.all_args.env_name)
+        elif self.all_args.algorithm_name == "dmomat":
+            from mat.utils.dmo_shared_buffer import DMOSharedReplayBuffer
+            from mat.algorithms.dmomat.dmomat_trainer import DMOMATTrainer as TrainAlgo
+            from mat.algorithms.mat.algorithm.transformer_policy import TransformerPolicy as Policy
+            # policy network
+            self.policy = Policy(self.all_args,
+                                self.envs.observation_space[0],
+                                share_observation_space,
+                                self.envs.action_space[0],
+                                self.num_agents,
+                                device=self.device)
+            # algorithm
+            self.trainer = TrainAlgo(self.all_args, self.policy, self.num_agents, device=self.device)
+            
+            # buffer
+            self.buffer = DMOSharedReplayBuffer(self.all_args,
+                                            self.num_agents,
+                                            self.envs.observation_space[0],
+                                            share_observation_space,
+                                            self.envs.action_space[0],
+                                            self.all_args.env_name)
         if self.model_dir is not None:
             self.restore(self.model_dir)
 
