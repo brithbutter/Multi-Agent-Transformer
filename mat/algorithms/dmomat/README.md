@@ -1,0 +1,2 @@
+# Dynamic Multi-Objective MAT
+Considering the various requirements of ML computation tasks, the constraints of computation time and computation cost different from different tasks. Hence, once the MODRL can observe the coefficients for different objectives, the MODRL has a potential to optimize objectives reaching the pareto optimal.
