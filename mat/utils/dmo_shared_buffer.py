@@ -239,22 +239,34 @@ class DMOSharedReplayBuffer(object):
         # Check Normalize
         for step in reversed(range(self.objectives.shape[0])):
             if self._use_popart or self._use_valuenorm:
-                delta = self.objectives[step] + self.gamma * value_normalizer.denormalize(
-                    self.objective_preds[step + 1]) * self.masks[step + 1] \
-                        - value_normalizer.denormalize(self.objective_preds[step])
+                # Use Original Advantage Value
+                # delta = self.objectives[step] + self.gamma * value_normalizer.denormalize(
+                #     self.objective_preds[step + 1]) * self.masks[step + 1] \
+                #         - value_normalizer.denormalize(self.objective_preds[step])
+                # Use Normalized Advantage Value
+                delta = value_normalizer.normalize(self.objectives[step]).cpu().numpy() \
+                    + (self.gamma * self.objective_preds[step + 1] * self.masks[step + 1])\
+                    - self.objective_preds[step]
+                    
+                
                 gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
                 
                 # here is a patch for mpe, whose last step is timeout instead of terminate
                 if self.env_name == "MPE" and step == self.objectives.shape[0] - 1:
                     gae = 0
-                # TODO if has coefficients, should make gae*coefficients
                 if self.objective_coefficients is not None:
                     obj_coefficients = self.objective_coefficients[step]
                     weighted_gae = _cal_weighted_gae(gae=gae,objective_coefficients=obj_coefficients)
                     self.advantages[step] = weighted_gae
                 else:
                     self.advantages[step] = gae
-                self.returns[step] = gae + value_normalizer.denormalize(self.objective_preds[step])
+                if value_normalizer.updated:
+                    # Original Return with Original GAE
+                    # self.returns[step] = gae + value_normalizer.denormalize(self.objective_preds[step])
+                    # Original Return with Normalize GAE
+                    self.returns[step] = value_normalizer.denormalize(gae +self.objective_preds[step])
+                else:
+                    self.returns[step] = self.objectives[step]
             else:
                 delta = self.objectives[step] + self.gamma * self.objective_preds[step + 1] * \
                         self.masks[step + 1] - self.objective_preds[step]

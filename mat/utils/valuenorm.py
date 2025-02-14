@@ -17,7 +17,7 @@ class ValueNorm(nn.Module):
         self.beta = beta
         self.per_element_update = per_element_update
         self.tpdv = dict(dtype=torch.float32, device=device)
-
+        self.updated = False
         self.running_mean = nn.Parameter(torch.zeros(input_shape), requires_grad=False).to(**self.tpdv)
         self.running_mean_sq = nn.Parameter(torch.zeros(input_shape), requires_grad=False).to(**self.tpdv)
         self.debiasing_term = nn.Parameter(torch.tensor(0.0), requires_grad=False).to(**self.tpdv)
@@ -37,6 +37,7 @@ class ValueNorm(nn.Module):
 
     @torch.no_grad()
     def update(self, input_vector):
+        self.updated = True
         if type(input_vector) == np.ndarray:
             input_vector = torch.from_numpy(input_vector)
         input_vector = input_vector.to(**self.tpdv)
