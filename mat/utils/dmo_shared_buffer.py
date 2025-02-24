@@ -50,6 +50,7 @@ class DMOSharedReplayBuffer(object):
         self._use_popart = args.use_popart
         self._use_valuenorm = args.use_valuenorm
         self._use_proper_time_limits = args.use_proper_time_limits
+        self.use_advantage_norm = args.use_advantage_norm
         self.algo = args.algorithm_name
         self.num_agents = num_agents
         self.env_name = env_name
@@ -239,14 +240,17 @@ class DMOSharedReplayBuffer(object):
         # Check Normalize
         for step in reversed(range(self.objectives.shape[0])):
             if self._use_popart or self._use_valuenorm:
-                # Use Original Advantage Value
-                # delta = self.objectives[step] + self.gamma * value_normalizer.denormalize(
-                #     self.objective_preds[step + 1]) * self.masks[step + 1] \
-                #         - value_normalizer.denormalize(self.objective_preds[step])
-                # Use Normalized Advantage Value
-                delta = value_normalizer.normalize(self.objectives[step]).cpu().numpy() \
-                    + (self.gamma * self.objective_preds[step + 1] * self.masks[step + 1])\
-                    - self.objective_preds[step]
+                if self.use_advantage_norm:
+                    # Use Normalized Advantage Value
+                    delta = value_normalizer.normalize(self.objectives[step]).cpu().numpy() \
+                        + (self.gamma * self.objective_preds[step + 1] * self.masks[step + 1])\
+                        - self.objective_preds[step]
+                else:
+                    # Use Original Advantage Value
+                    delta = self.objectives[step] + self.gamma * value_normalizer.denormalize(
+                    self.objective_preds[step + 1]) * self.masks[step + 1] \
+                        - value_normalizer.denormalize(self.objective_preds[step])
+                    
                     
                 
                 gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
@@ -254,17 +258,22 @@ class DMOSharedReplayBuffer(object):
                 # here is a patch for mpe, whose last step is timeout instead of terminate
                 if self.env_name == "MPE" and step == self.objectives.shape[0] - 1:
                     gae = 0
-                if self.objective_coefficients is not None:
-                    obj_coefficients = self.objective_coefficients[step]
-                    weighted_gae = _cal_weighted_gae(gae=gae,objective_coefficients=obj_coefficients)
-                    self.advantages[step] = weighted_gae
-                else:
-                    self.advantages[step] = gae
+                # Here is a implementation for weighted gae.
+                # if self.objective_coefficients is not None:
+                #     obj_coefficients = self.objective_coefficients[step]
+                #     weighted_gae = _cal_weighted_gae(gae=gae,objective_coefficients=obj_coefficients)
+                #     self.advantages[step] = weighted_gae
+                # else:
+                #     self.advantages[step] = gae
+                # Here is a implementation for normal gae.
+                self.advantages[step] = gae
                 if value_normalizer.updated:
-                    # Original Return with Original GAE
-                    # self.returns[step] = gae + value_normalizer.denormalize(self.objective_preds[step])
-                    # Original Return with Normalize GAE
-                    self.returns[step] = value_normalizer.denormalize(gae +self.objective_preds[step])
+                    if self.use_advantage_norm:
+                        # Original Return with Normalize GAE
+                        self.returns[step] = value_normalizer.denormalize(gae +self.objective_preds[step])
+                    else:
+                        # Original Return with Original GAE
+                        self.returns[step] = gae + value_normalizer.denormalize(self.objective_preds[step])           
                 else:
                     self.returns[step] = self.objectives[step]
             else:
@@ -276,12 +285,16 @@ class DMOSharedReplayBuffer(object):
                 if self.env_name == "MPE" and step == self.objectives.shape[0] - 1:
                     gae = 0
 
-                if self.objective_coefficients is not None:
-                    obj_coefficients = self.objective_coefficients[step]
-                    weighted_gae = _cal_weighted_gae(gae=gae,objective_coefficients=obj_coefficients)
-                    self.advantages[step] = weighted_gae
-                else:
-                    self.advantages[step] = gae
+                # Here is a implementation for weighted gae. 
+                # Due the effect issue, we comments this implementation
+                # if self.objective_coefficients is not None:
+                #     obj_coefficients = self.objective_coefficients[step]
+                #     weighted_gae = _cal_weighted_gae(gae=gae,objective_coefficients=obj_coefficients)
+                #     self.advantages[step] = weighted_gae
+                # else:
+                #     self.advantages[step] = gae
+                # Here is a implementation for normal gae.
+                self.advantages[step] = gae
                 self.returns[step] = gae + self.objective_preds[step]
 
     def feed_forward_generator_transformer(self, advantages, num_mini_batch=None, mini_batch_size=None):
