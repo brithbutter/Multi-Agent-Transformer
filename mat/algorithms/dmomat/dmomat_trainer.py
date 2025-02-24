@@ -53,7 +53,23 @@ class DMOMATTrainer:
             self.value_normalizer = ValueNorm(self.n_objective, device=self.device)
         else:
             self.value_normalizer = None
+    def cal_single_value_loss(self, error_clipped, error_original, active_masks_batch):
+        if self._use_huber_loss:
+            value_loss_clipped = huber_loss(error_clipped, self.huber_delta)
+            value_loss_original = huber_loss(error_original, self.huber_delta)
+        else:
+            value_loss_clipped = mse_loss(error_clipped)
+            value_loss_original = mse_loss(error_original)
+        if self._use_clipped_value_loss:
+            value_loss = torch.max(value_loss_original, value_loss_clipped)
+        else:
+            value_loss = value_loss_original
 
+        if self._use_value_active_masks:
+            value_loss = (value_loss * active_masks_batch).sum() / active_masks_batch.sum()
+        else:
+            value_loss = value_loss.mean()
+        return value_loss
     def cal_value_loss(self, values, value_preds_batch, return_batch, active_masks_batch):
         """
         Calculate value function loss.
@@ -76,25 +92,15 @@ class DMOMATTrainer:
             error_clipped = return_batch - value_pred_clipped
             error_original = return_batch - values
 
-        if self._use_huber_loss:
-            value_loss_clipped = huber_loss(error_clipped, self.huber_delta)
-            value_loss_original = huber_loss(error_original, self.huber_delta)
+        if self.n_objective == 1:
+            value_loss = self.cal_single_value_loss(error_clipped, error_original, active_masks_batch)
+            return value_loss
         else:
-            value_loss_clipped = mse_loss(error_clipped)
-            value_loss_original = mse_loss(error_original)
-
-        if self._use_clipped_value_loss:
-            value_loss = torch.max(value_loss_original, value_loss_clipped)
-        else:
-            value_loss = value_loss_original
-
-        # if self._use_value_active_masks and not self.dec_actor:
-        if self._use_value_active_masks:
-            value_loss = (value_loss * active_masks_batch).sum() / active_masks_batch.sum()
-        else:
-            value_loss = value_loss.mean()
-
-        return value_loss
+            value_losses = []
+            for i_objective in range(self.n_objective):
+                value_loss = self.cal_single_value_loss(error_clipped[i_objective], error_original[i_objective], active_masks_batch)
+                value_losses.append(value_loss)
+            return value_losses
 
     def ppo_update(self, sample):
         """
@@ -139,19 +145,25 @@ class DMOMATTrainer:
         # actor update
         
 
-        available_actions_batch = check(available_actions_batch).to(**self.tpdv)
+        available_actions_batch = check(available_actions_batch.flatten()).to(**self.tpdv)
         adv_targ = adv_targs
         value_preds_batch = value_preds_batchs
         return_batch = return_batchs
         value = values
         surr1 = imp_weights * adv_targ
         surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
-        value_loss = self.cal_value_loss(value, value_preds_batch, return_batch, active_masks_batch)
+        if self.n_objective == 1:
+            value_loss = self.cal_value_loss(value, value_preds_batch, return_batch, active_masks_batch)
+            value_losses.append(value_loss)
+        else:
+            value_losses = self.cal_value_loss(value, value_preds_batch, return_batch, active_masks_batch)
+            value_loss = sum(value_losses) / self.n_objective
         for i_objective in range(self.n_objective):
             if self._use_actor_masks:
-                policy_loss = (-torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective])* available_actions_batch[:],
-                                        dim=-1,
-                                        keepdim=True) ).sum() / available_actions_batch[:].sum() 
+                # policy_loss = (-torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective])* available_actions_batch[:],
+                #                         dim=-1,
+                #                         keepdim=True) ).sum() / available_actions_batch[:].sum() 
+                policy_loss = (-torch.min(surr1[:,i_objective], surr2[:,i_objective])* available_actions_batch[:]).sum() / available_actions_batch[:].sum() 
             elif self._use_policy_active_masks:
                 policy_loss = (-torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective])* active_masks_batch[:,i_objective],
                                         dim=-1,
@@ -159,7 +171,7 @@ class DMOMATTrainer:
             else:
                 policy_loss = -torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective]), dim=-1, keepdim=True).mean()
             policy_losses.append(policy_loss)
-            value_losses.append(value_loss)
+            
             # critic update
             
             if tot_policy_loss == 0:
@@ -220,10 +232,17 @@ class DMOMATTrainer:
             next_values = np.array(np.split(_t2n(next_values), self.n_rollout_threads))
             buffer.compute_returns(next_values, self.value_normalizer)
             advantages_copy = buffer.advantages.copy()
+            objective_coefficients_copy = buffer.objective_coefficients.copy()
             advantages_copy[buffer.active_masks[:-1] == 0.0] = np.nan
-            mean_advantages = np.nanmean(advantages_copy)
-            std_advantages = np.nanstd(advantages_copy)
-            advantages = (buffer.advantages - mean_advantages) / (std_advantages + 1e-5)
+            advantages = np.zeros_like(buffer.advantages)
+            for i in range(self.n_objective):
+                mean_advantages = np.nanmean(advantages_copy[:,:,:,i])
+                std_advantages = np.nanstd(advantages_copy[:,:,:,i])
+                advantages[:,:,:,i] = (buffer.advantages[:,:,:,i] - mean_advantages) / (std_advantages + 1e-5)
+            for row in range(advantages.shape[0]):
+                for col in range(advantages.shape[1]):
+                    advantages[row,col] = advantages[row,col] * objective_coefficients_copy[row,col]
+            
             data_generator = buffer.feed_forward_generator_transformer(advantages, self.num_mini_batch)
 
             for sample in data_generator:
