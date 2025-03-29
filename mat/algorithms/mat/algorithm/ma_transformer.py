@@ -255,7 +255,7 @@ class MultiAgentTransformer(nn.Module):
         if self.action_type != 'Discrete':
             self.decoder.zero_std(self.device)
 
-    def forward(self, state, obs, action, available_actions=None):
+    def forward(self, state, obs, action, available_actions=None,THOP_FLAG=False):
         # state: (batch, n_agent, state_dim)
         # obs: (batch, n_agent, obs_dim)
         # action: (batch, n_agent, 1)
@@ -273,7 +273,13 @@ class MultiAgentTransformer(nn.Module):
             available_actions = check(available_actions).to(**self.tpdv)
 
         batch_size = np.shape(state)[0]
-        v_loc, obs_rep = self.encoder(state, obs)
+        
+        if THOP_FLAG:
+            v_loc, obs_rep=self.encoder(state,obs)
+            logit = self.decoder(action,obs_rep,obs)
+            return logit, v_loc
+        else:
+            v_loc, obs_rep = self.encoder(state, obs)
         if self.action_type == 'Discrete':
             action = action.long()
             action_log, entropy = discrete_parallel_act(self.decoder, obs_rep, obs, action, batch_size,
