@@ -45,7 +45,7 @@ class SeparatedReplayBuffer(object):
         if act_space.__class__.__name__ == 'Discrete':
             self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, act_space.n), dtype=np.float32)
         elif act_space.__class__.__name__ == 'Action_Space':
-            if act_space.multi_discrete:
+            if act_space.multi_discrete or act_space.continuous:
                 self.available_actions = None
             else:
                 self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, act_space.n), dtype=np.float32)
