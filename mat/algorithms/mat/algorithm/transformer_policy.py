@@ -144,8 +144,10 @@ class TransformerPolicy:
         values = values.view(-1, n_objective)
 
         # unused, just for compatibility
-        rnn_states_actor = check(rnn_states_actor).to(**self.tpdv)
-        rnn_states_critic = check(rnn_states_critic).to(**self.tpdv)
+        if rnn_states_actor is not None:
+            rnn_states_actor = check(rnn_states_actor).to(**self.tpdv)
+        if rnn_states_critic is not None:
+            rnn_states_critic = check(rnn_states_critic).to(**self.tpdv)
         return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
 
     def get_values(self, cent_obs, obs, rnn_states_critic, masks, available_actions=None,n_objective = 1):
