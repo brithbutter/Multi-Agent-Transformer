@@ -25,6 +25,7 @@ class Runner(object):
             self.render_envs = config['render_envs']       
 
         # parameters
+        self.use_single_network = False
         self.env_name = self.all_args.env_name
         self.algorithm_name = self.all_args.algorithm_name
         self.experiment_name = self.all_args.experiment_name
@@ -436,15 +437,18 @@ class Runner(object):
     def save(self, episode):
         """Save policy's actor and critic networks."""
         if self.all_args.algorithm_name == "happo" or self.algorithm_name == "rmappo" or self.all_args.algorithm_name == "hatrpo" or self.all_args.algorithm_name == "ippo":
+            model_dir = str(self.save_dir + '/ep_{}'.format(episode))
+            if not os.path.exists(model_dir):
+                os.makedirs(model_dir)
             for agent_id in range(self.num_agents):
                 if self.use_single_network:
                     policy_model = self.trainer[agent_id].policy.model
-                    torch.save(policy_model.state_dict(), str(self.save_dir) + "/model_agent" + str(agent_id) + ".pt")
+                    torch.save(policy_model.state_dict(), str(model_dir) + "/model_agent" + str(agent_id) + ".pt")
                 else:
                     policy_actor = self.trainer[agent_id].policy.actor
-                    torch.save(policy_actor.state_dict(), str(self.save_dir) + "/actor_agent" + str(agent_id) + ".pt")
+                    torch.save(policy_actor.state_dict(), str(model_dir) + "/actor_agent" + str(agent_id) + ".pt")
                     policy_critic = self.trainer[agent_id].policy.critic
-                    torch.save(policy_critic.state_dict(), str(self.save_dir) + "/critic_agent" + str(agent_id) + ".pt")
+                    torch.save(policy_critic.state_dict(), str(model_dir) + "/critic_agent" + str(agent_id) + ".pt")
         elif self.all_args.algorithm_name == "random":
             pass
         else:
