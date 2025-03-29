@@ -54,8 +54,10 @@ class Actor(nn.Module):
         :return rnn_states: (torch.Tensor) updated RNN hidden states.
         """
         obs = check(obs).to(**self.tpdv)
-        rnn_states = check(rnn_states).to(**self.tpdv)
-        masks = check(masks).to(**self.tpdv)
+        if rnn_states is not None:
+            rnn_states = check(rnn_states).to(**self.tpdv)
+        if masks is not None:
+            masks = check(masks).to(**self.tpdv)
         if available_actions is not None:
             available_actions = check(available_actions).to(**self.tpdv)
 
@@ -156,8 +158,10 @@ class Critic(nn.Module):
         :return rnn_states: (torch.Tensor) updated RNN hidden states.
         """
         cent_obs = check(cent_obs).to(**self.tpdv)
-        rnn_states = check(rnn_states).to(**self.tpdv)
-        masks = check(masks).to(**self.tpdv)
+        if rnn_states is not None:
+            rnn_states = check(rnn_states).to(**self.tpdv)
+        if masks is not None:
+            masks = check(masks).to(**self.tpdv)
 
         critic_features = self.base(cent_obs)
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
