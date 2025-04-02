@@ -19,7 +19,9 @@ class ACTLayer(nn.Module):
             action_dim = action_space.n
             self.action_out = Categorical(inputs_dim, action_dim, use_orthogonal, gain)
         elif action_space.__class__.__name__ == "Action_Space":
+            self.action_out_type = None
             if action_space.mixed:
+                self.action_out_type = "MIX_ACTION"
                 self.mixed_action = True
                 self.semi_index = action_space.semi_index
                 self.log_std = torch.nn.Parameter(torch.ones(-self.semi_index))
@@ -28,9 +30,11 @@ class ACTLayer(nn.Module):
                 self.action_dims = action_space.high - action_space.low
                 self.action_range = action_space.n
             if action_space.extra:
+                self.action_out_type = "CONTINUOUS_ACTION"
                 action_dim = 1
                 self.action_out = DiagGaussian(inputs_dim, action_dim, use_orthogonal, gain, args)
             elif action_space.multi_discrete:
+                self.action_out_type = "MULTI_DISCRETE"
                 self.multi_discrete = True
                 action_dims = action_space.high - action_space.low
                 self.action_outs = []
@@ -38,6 +42,7 @@ class ACTLayer(nn.Module):
                     self.action_outs.append(Categorical(inputs_dim, action_dim, use_orthogonal, gain))
                 self.action_outs = nn.ModuleList(self.action_outs)
             else:
+                self.action_out_type = "DISCRETE"
                 action_dim = action_space.n
                 self.action_out = Categorical(inputs_dim, action_dim, use_orthogonal, gain)
         elif action_space.__class__.__name__ == "Box":
@@ -208,7 +213,7 @@ class ACTLayer(nn.Module):
             action_logits = self.action_out(x, available_actions)
             action_log_probs = action_logits.log_probs(action)
             if active_masks is not None:
-                if self.action_type=="Discrete":
+                if self.action_type=="Discrete" or (self.action_type== "Action_Space" and self.action_out_type == "DISCRETE"):
                     dist_entropy = (action_logits.entropy()*active_masks.squeeze(-1)).sum()/active_masks.sum()
                 else:
                     dist_entropy = (action_logits.entropy()*active_masks).sum()/active_masks.sum()
