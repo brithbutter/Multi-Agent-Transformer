@@ -15,6 +15,8 @@ from mat.algorithms.utils.transformer_act import continuous_parallel_act
 from mat.algorithms.utils.transformer_act import available_continuous_autoregreesive_act
 from mat.algorithms.utils.transformer_act import available_continuous_parallel_act
 
+OPTION_MULTI_OBJECTIVE_APPROACH = 0
+
 def init_(m, gain=0.01, activate=False):
     if activate:
         gain = nn.init.calculate_gain('relu')
@@ -135,11 +137,16 @@ class Encoder(nn.Module):
 
         self.ln = nn.LayerNorm(n_embd)
         self.blocks = nn.Sequential(*[EncodeBlock(n_embd, n_head, n_agent) for _ in range(n_block)])
-        self.heads = nn.ModuleList()
         
-        for i_objective in range(n_objective):
-            self.heads.append(nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
-                                init_(nn.Linear(n_embd, 1))))
+        
+        if OPTION_MULTI_OBJECTIVE_APPROACH == 0:
+            self.heads = nn.ModuleList()
+            for i_objective in range(n_objective):
+                self.heads.append(nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
+                                    init_(nn.Linear(n_embd, 1))))
+        elif OPTION_MULTI_OBJECTIVE_APPROACH == 1:
+            self.heads = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
+                                    init_(nn.Linear(n_embd, n_objective)))
 
     def forward(self, state, obs):
         # state: (batch, n_agent, state_dim)
@@ -152,10 +159,13 @@ class Encoder(nn.Module):
             x = obs_embeddings
 
         rep = self.blocks(self.ln(x))
-        v_locs = []
-        for head in self.heads:
-            v_locs.append(head(rep))
-        v_locs = torch.cat(v_locs, dim=-1)
+        if OPTION_MULTI_OBJECTIVE_APPROACH == 0:
+            v_locs = []
+            for head in self.heads:
+                v_locs.append(head(rep))
+            v_locs = torch.cat(v_locs, dim=-1)
+        elif OPTION_MULTI_OBJECTIVE_APPROACH == 1:
+            v_locs = self.heads(rep)
         # v_locs = torch.stack(v_locs,2)
         return v_locs, rep
 
@@ -196,8 +206,10 @@ class Decoder(nn.Module):
         else:
             # self.agent_id_emb = nn.Parameter(torch.zeros(1, n_agent, n_embd))
             # This difference is because the output dim different from the discrete and continous representation.
-            if action_type == 'Discrete' or action_type == 'Semi_Discrete'  :
+            if action_type in ['Discrete','Semi_Discrete']:
                 self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim + 1, n_embd, bias=False), activate=True),nn.GELU())
+            elif action_type == "Available_Continous":
+                self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim, n_embd,bias=False), activate=True), nn.GELU())
             else:
                 self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim, n_embd), activate=True), nn.GELU())
             self.obs_encoder = nn.Sequential(nn.LayerNorm(obs_dim),
@@ -206,7 +218,7 @@ class Decoder(nn.Module):
             self.blocks = nn.Sequential(*[DecodeBlock(n_embd, n_head, n_agent) for _ in range(n_block)])
             if action_type == "Available_Continous":
                 self.head = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
-                                    init_(nn.Linear(n_embd, action_dim)),nn.Sigmoid())
+                                    init_(nn.Linear(n_embd, action_dim),activate=True),nn.ReLU())
             else:
                 self.head = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
                                     init_(nn.Linear(n_embd, action_dim)))
@@ -324,10 +336,12 @@ class DMOMultiAgentTransformer(nn.Module):
             output_action, output_action_log = continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                             self.n_agent, self.action_dim, self.tpdv,
                                                                             deterministic)
-        else:
+        elif self.action_type == "Available_Continous":
             output_action, output_action_log = available_continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                             self.n_agent, self.action_dim, self.tpdv,
                                                             available_actions,deterministic)
+        else:
+            raise NotImplementedError
         return output_action, output_action_log, v_locs
 
     def get_values(self, state, obs, available_actions=None):
