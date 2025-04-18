@@ -254,8 +254,8 @@ class MultiAgentTransformer(nn.Module):
     def zero_std(self):
         if self.action_type != 'Discrete':
             self.decoder.zero_std(self.device)
-
     def forward(self, state, obs, action, available_actions=None,THOP_FLAG=False):
+    # def train_forward(self, state, obs, action, available_actions=None,THOP_FLAG=False):
         # state: (batch, n_agent, state_dim)
         # obs: (batch, n_agent, obs_dim)
         # action: (batch, n_agent, 1)
@@ -294,7 +294,9 @@ class MultiAgentTransformer(nn.Module):
 
         return action_log, v_loc, entropy
 
+    # TO TEST THOP replace function name with forward
     def get_actions(self, state, obs, available_actions=None, deterministic=False, stride= 2):
+    # def forward(self, state, obs, available_actions=None, deterministic=False, stride= 2):
         # state unused
         # ori_shape = np.shape(obs)
         # state = np.zeros((*ori_shape[:-1], 37), dtype=np.float32)
