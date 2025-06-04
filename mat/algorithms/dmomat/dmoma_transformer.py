@@ -15,11 +15,11 @@ from mat.algorithms.utils.transformer_act import continuous_parallel_act
 from mat.algorithms.utils.transformer_act import available_continuous_autoregreesive_act
 from mat.algorithms.utils.transformer_act import available_continuous_parallel_act
 
-OPTION_MULTI_OBJECTIVE_APPROACH = 0
+OPTION_MULTI_OBJECTIVE_APPROACH = 1
 
-def init_(m, gain=0.01, activate=False):
-    if activate:
-        gain = nn.init.calculate_gain('relu')
+def init_(m, gain=0.01, activate=None):
+    if activate in ['linear', 'conv1d', 'conv2d', 'conv3d', 'conv_transpose1d', 'relu','conv_transpose2d', 'conv_transpose3d','sigmoid', 'tanh','leaky_relu']:
+        gain = nn.init.calculate_gain(activate)
     return init(m, nn.init.orthogonal_, lambda x: nn.init.constant_(x, 0), gain=gain)
 
 
@@ -83,7 +83,7 @@ class EncodeBlock(nn.Module):
         # self.attn = nn.MultiheadAttention(n_embd,n_head)
         self.attn = SelfAttention(n_embd, n_head, n_agent, masked=False)
         self.mlp = nn.Sequential(
-            init_(nn.Linear(n_embd, 1 * n_embd), activate=True),
+            init_(nn.Linear(n_embd, 1 * n_embd), activate='relu'),
             nn.GELU(),
             init_(nn.Linear(1 * n_embd, n_embd))
         )
@@ -106,7 +106,7 @@ class DecodeBlock(nn.Module):
         self.attn1 = SelfAttention(n_embd, n_head, n_agent, masked=True)
         self.attn2 = SelfAttention(n_embd, n_head, n_agent, masked=True)
         self.mlp = nn.Sequential(
-            init_(nn.Linear(n_embd, 1 * n_embd), activate=True),
+            init_(nn.Linear(n_embd, 1 * n_embd), activate='relu'),
             nn.GELU(),
             init_(nn.Linear(1 * n_embd, n_embd))
         )
@@ -131,9 +131,9 @@ class Encoder(nn.Module):
         # self.agent_id_emb = nn.Parameter(torch.zeros(1, n_agent, n_embd))
 
         self.state_encoder = nn.Sequential(nn.LayerNorm(state_dim),
-                                           init_(nn.Linear(state_dim, n_embd), activate=True), nn.GELU())
+                                           init_(nn.Linear(state_dim, n_embd), activate='relu'), nn.GELU())
         self.obs_encoder = nn.Sequential(nn.LayerNorm(obs_dim),
-                                         init_(nn.Linear(obs_dim, n_embd), activate=True), nn.GELU())
+                                         init_(nn.Linear(obs_dim, n_embd), activate='relu'), nn.GELU())
 
         self.ln = nn.LayerNorm(n_embd)
         self.blocks = nn.Sequential(*[EncodeBlock(n_embd, n_head, n_agent) for _ in range(n_block)])
@@ -142,10 +142,10 @@ class Encoder(nn.Module):
         if OPTION_MULTI_OBJECTIVE_APPROACH == 0:
             self.heads = nn.ModuleList()
             for i_objective in range(n_objective):
-                self.heads.append(nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
+                self.heads.append(nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate='relu'), nn.GELU(), nn.LayerNorm(n_embd),
                                     init_(nn.Linear(n_embd, 1))))
         elif OPTION_MULTI_OBJECTIVE_APPROACH == 1:
-            self.heads = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
+            self.heads = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate='relu'), nn.GELU(), nn.LayerNorm(n_embd),
                                     init_(nn.Linear(n_embd, n_objective)))
 
     def forward(self, state, obs):
@@ -173,7 +173,7 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
 
     def __init__(self, obs_dim, action_dim, n_block, n_embd, n_head, n_agent,
-                 action_type='Discrete', dec_actor=False, share_actor=False):
+                 action_type='Discrete', dec_actor=False, share_actor=False,discrete_dim=2):
         super(Decoder, self).__init__()
 
         self.action_dim = action_dim
@@ -192,36 +192,39 @@ class Decoder(nn.Module):
             if self.share_actor:
                 print("mac_dec!!!!!")
                 self.mlp = nn.Sequential(nn.LayerNorm(obs_dim),
-                                        init_(nn.Linear(obs_dim, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
-                                        init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
+                                        init_(nn.Linear(obs_dim, n_embd), activate='relu'), nn.GELU(), nn.LayerNorm(n_embd),
+                                        init_(nn.Linear(n_embd, n_embd), activate='relu'), nn.GELU(), nn.LayerNorm(n_embd),
                                         init_(nn.Linear(n_embd, action_dim)))
             else:
                 self.mlp = nn.ModuleList()
                 for n in range(n_agent):
                     actor = nn.Sequential(nn.LayerNorm(obs_dim),
-                                        init_(nn.Linear(obs_dim, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
-                                        init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
+                                        init_(nn.Linear(obs_dim, n_embd), activate='relu'), nn.GELU(), nn.LayerNorm(n_embd),
+                                        init_(nn.Linear(n_embd, n_embd), activate='relu'), nn.GELU(), nn.LayerNorm(n_embd),
                                         init_(nn.Linear(n_embd, action_dim)))
                     self.mlp.append(actor)
         else:
             # self.agent_id_emb = nn.Parameter(torch.zeros(1, n_agent, n_embd))
             # This difference is because the output dim different from the discrete and continous representation.
-            if action_type in ['Discrete','Semi_Discrete']:
-                self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim + 1, n_embd, bias=False), activate=True),nn.GELU())
-            elif action_type == "Available_Continous":
-                self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim, n_embd,bias=False), activate=True), nn.GELU())
+            if action_type in ["Discrete", "Semi_Discrete", "Available_Continous"] :
+                self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim + 1, n_embd, bias=False), activate='relu'),
+                                                    nn.GELU())
+            elif action_type in ["Available_Continous"] :
+                self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim + 1, n_embd), activate='relu'),
+                                                    nn.GELU())
             else:
-                self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim, n_embd), activate=True), nn.GELU())
+                self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim, n_embd), activate='relu'), nn.GELU())
             self.obs_encoder = nn.Sequential(nn.LayerNorm(obs_dim),
-                                            init_(nn.Linear(obs_dim, n_embd), activate=True), nn.GELU())
+                                            init_(nn.Linear(obs_dim, n_embd), activate='relu'), nn.GELU())
             self.ln = nn.LayerNorm(n_embd)
             self.blocks = nn.Sequential(*[DecodeBlock(n_embd, n_head, n_agent) for _ in range(n_block)])
             if action_type == "Available_Continous":
-                self.head = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
-                                    init_(nn.Linear(n_embd, action_dim),activate=True),nn.ReLU())
+                self.head = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate='relu'), nn.GELU(), nn.LayerNorm(n_embd),
+                # run 49
+                init_(nn.Linear(n_embd, action_dim)))
             else:
-                self.head = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
-                                    init_(nn.Linear(n_embd, action_dim)))
+                self.head = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate='relu'), nn.GELU(), nn.LayerNorm(n_embd),
+                init_(nn.Linear(n_embd, action_dim)))
 
     def zero_std(self, device):
         if self.action_type != 'Discrete':
