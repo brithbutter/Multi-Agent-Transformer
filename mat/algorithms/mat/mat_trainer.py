@@ -141,7 +141,7 @@ class MATTrainer:
         # critic update
         value_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch)
 
-        loss = policy_loss - dist_entropy * self.entropy_coef + value_loss * self.value_loss_coef
+        loss = policy_loss - dist_entropy * self.entropy_coef + value_loss * self.value_loss_coef[0]
 
         self.policy.optimizer.zero_grad()
         loss.backward()
