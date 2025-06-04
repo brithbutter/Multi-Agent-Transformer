@@ -190,7 +190,7 @@ class Decoder(nn.Module):
         else:
             # self.agent_id_emb = nn.Parameter(torch.zeros(1, n_agent, n_embd))
             # This difference is because the output dim different from the discrete and continous representation.
-            if action_type == 'Discrete' or action_type == 'Semi_Discrete'  :
+            if action_type in ["Discrete", "Semi_Discrete", "Available_Continous"] :
                 self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim + 1, n_embd, bias=False), activate=True),
                                                     nn.GELU())
             else:
@@ -322,10 +322,12 @@ class MultiAgentTransformer(nn.Module):
             output_action, output_action_log = continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                             self.n_agent, self.action_dim, self.tpdv,
                                                                             deterministic)
-        else:
+        elif self.action_type == "Available_Continous":
             output_action, output_action_log = available_continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                             self.n_agent, self.action_dim, self.tpdv,
                                                             available_actions,deterministic)
+        else:
+            raise NotImplementedError("action type not supported")
         return output_action, output_action_log, v_loc
 
     def get_values(self, state, obs, available_actions=None):
