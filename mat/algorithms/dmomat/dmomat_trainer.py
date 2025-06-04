@@ -7,7 +7,10 @@ from mat.algorithms.utils.util import check
 def _t2n(x):
     """Convert torch tensor to a numpy array."""
     return x.detach().cpu().numpy()
-
+def normalize_advantage(adv,adv_copy):
+    mean_advantages = np.nanmean(adv_copy)
+    std_advantages = np.nanstd(adv_copy)
+    return (adv - mean_advantages) / (std_advantages + 1e-5)
 class DMOMATTrainer:
     """
     Trainer class for MAT to update policies.
@@ -48,6 +51,7 @@ class DMOMATTrainer:
         self._use_policy_active_masks = args.use_policy_active_masks
         self._use_actor_masks = args.use_actor_masks
         self.dec_actor = args.dec_actor
+        self.single_dim_advantage = args.single_dim_advantage
         
         if self._use_valuenorm:
             self.value_normalizer = ValueNorm(self.n_objective, device=self.device)
@@ -98,9 +102,12 @@ class DMOMATTrainer:
         else:
             value_losses = []
             for i_objective in range(self.n_objective):
-                value_loss = self.cal_single_value_loss(error_clipped[i_objective], error_original[i_objective], active_masks_batch)
+                value_loss = self.cal_single_value_loss(error_clipped[:,i_objective], error_original[:,i_objective], active_masks_batch[:,i_objective])
                 value_losses.append(value_loss)
-            return value_losses
+            single_error_clipped = (error_clipped**2).sum(dim=-1, keepdim=True).sqrt()
+            single_error_original = (error_original**2).sum(dim=-1, keepdim=True).sqrt()
+            single_value_loss = self.cal_single_value_loss(single_error_clipped, single_error_original, active_masks_batch[:,:1])
+            return value_losses,single_value_loss
 
     def ppo_update(self, sample):
         """
@@ -118,7 +125,6 @@ class DMOMATTrainer:
         share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, \
         value_preds_batchs, return_batchs, masks_batch, active_masks_batch, old_action_log_probs_batch, \
         adv_targs, available_actions_batch = sample
-
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         
         active_masks_batch = check(active_masks_batch).to(**self.tpdv)
@@ -141,47 +147,73 @@ class DMOMATTrainer:
         policy_losses = []
         tot_value_loss = 0
         value_losses = []
+        # imp_weights = torch.exp(torch.mean(action_log_probs,dim=-1,keepdim=True) - torch.mean(old_action_log_probs_batch,dim=-1,keepdim=True)).squeeze(-1)
         imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
         # actor update
         
 
-        available_actions_batch = check(available_actions_batch.flatten()).to(**self.tpdv)
+        available_actions_batch = check(available_actions_batch[:,-1]).to(**self.tpdv)
+        # adv_targ = adv_targs.squeeze(-1)
         adv_targ = adv_targs
         value_preds_batch = value_preds_batchs
         return_batch = return_batchs
         value = values
-        surr1 = imp_weights * adv_targ
-        surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
+        
+        p1_coefficients = [1,1,1]
+        p2_coefficients = [1,1,1]
+        p_c_i = 0
+        
         if self.n_objective == 1:
             value_loss = self.cal_value_loss(value, value_preds_batch, return_batch, active_masks_batch)
             value_losses.append(value_loss)
         else:
-            value_losses = self.cal_value_loss(value, value_preds_batch, return_batch, active_masks_batch)
-            value_loss = sum(value_losses) / self.n_objective
-        for i_objective in range(self.n_objective):
-            if self._use_actor_masks:
-                # policy_loss = (-torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective])* available_actions_batch[:],
-                #                         dim=-1,
-                #                         keepdim=True) ).sum() / available_actions_batch[:].sum() 
-                policy_loss = (-torch.min(surr1[:,i_objective], surr2[:,i_objective])* available_actions_batch[:]).sum() / available_actions_batch[:].sum() 
-            elif self._use_policy_active_masks:
-                policy_loss = (-torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective])* active_masks_batch[:,i_objective],
-                                        dim=-1,
-                                        keepdim=True) ).sum() / active_masks_batch[:,i_objective].sum()
-            else:
-                policy_loss = -torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective]), dim=-1, keepdim=True).mean()
+            value_losses,single_value_loss = self.cal_value_loss(value, value_preds_batch, return_batch, active_masks_batch)
+            value_loss = None
+            for loss,coef in zip(value_losses,self.value_loss_coef):
+                if value_loss is None:
+                    value_loss = loss * coef
+                else:
+                    value_loss += loss * coef
+            value_loss = value_loss / self.n_objective
+            # value_loss = self.value_loss_coef[0]*single_value_loss
+        if self.single_dim_advantage:
+            surr1 = imp_weights * adv_targ
+            surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
+            policy_loss = (-torch.min(surr1, surr2)* active_masks_batch[:,:1]).sum() / active_masks_batch[:,:1].sum() 
             policy_losses.append(policy_loss)
+        else:
+            for i_objective in range(self.n_objective):
+            # for i_objective in range(self.n_objective):
+                surr1 = imp_weights * adv_targ[:,i_objective].unsqueeze(-1)
+                surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ[:,i_objective].unsqueeze(-1)
+                if self._use_actor_masks:
+                    # policy_loss = (-torch.sum(torch.min(surr1[:,i_objective], surr2[:,i_objective])* available_actions_batch[:],
+                    #                         dim=-1,
+                    #                         keepdim=True) ).sum() / available_actions_batch[:].sum() 
+                    policy_loss = (-torch.min(surr1, surr2)* available_actions_batch[:]).sum() / available_actions_batch[:].sum() 
+                elif self._use_policy_active_masks:
+                    policy_loss = (-torch.sum(torch.min(surr1, surr2)* active_masks_batch,
+                                            dim=-1,
+                                            keepdim=True) ).sum() / active_masks_batch.sum()
+                else:
+                    policy_loss = -torch.sum(torch.min(surr1, surr2), dim=-1, keepdim=True).mean()
+                policy_losses.append(policy_loss)
             
-            # critic update
             
-            if tot_policy_loss == 0:
-                tot_policy_loss = policy_loss
-                # tot_value_loss = value_loss[:,i_objective]
-            else:
-                tot_policy_loss += policy_loss
-                # tot_value_loss += value_loss[:,i_objective]
-
-        loss = (tot_policy_loss/self.n_objective) - dist_entropy * self.entropy_coef + value_loss * self.value_loss_coef
+                if tot_policy_loss == 0:
+                    tot_policy_loss = policy_loss * p1_coefficients[p_c_i]
+                    # tot_value_loss = value_loss[:,i_objective]
+                else:
+                    tot_policy_loss += policy_loss * p2_coefficients[p_c_i]
+                    # tot_value_loss += value_loss[:,i_objective]
+            p_c_i += 1
+            p_c_i = p_c_i % len(p1_coefficients)
+        if self.single_dim_advantage:
+            loss = policy_loss - dist_entropy * self.entropy_coef + value_loss 
+        else:
+            loss = (tot_policy_loss/self.n_objective) - dist_entropy * self.entropy_coef + value_loss 
+        # loss = (tot_policy_loss/self.n_objective) - dist_entropy * self.entropy_coef + value_loss * self.value_loss_coef
+        # loss = value_loss * self.value_loss_coef
 
         self.policy.optimizer.zero_grad()
         loss.backward()
@@ -209,7 +241,10 @@ class DMOMATTrainer:
         train_info = {}
         for i_objective in range(self.n_objective):
             train_info['value_loss_{}'.format(i_objective)] = 0
-            train_info['policy_loss_{}'.format(i_objective)] = 0
+            if self.single_dim_advantage:
+                train_info['policy_loss'] = 0
+            else:
+                train_info['policy_loss_{}'.format(i_objective)] = 0
         train_info['dist_entropy'] = 0
         train_info['actor_grad_norm'] = 0
         train_info['critic_grad_norm'] = 0
@@ -217,31 +252,38 @@ class DMOMATTrainer:
 
         for _ in range(self.ppo_epoch):
             
-            if buffer.available_actions is None:
-                next_values = self.policy.get_values(np.concatenate(buffer.share_obs[-1]),
-                                                            np.concatenate(buffer.obs[-1]),
-                                                            np.concatenate(buffer.rnn_states_critic[-1]),
-                                                            np.concatenate(buffer.masks[-1]))
-            else:
-                next_values = self.policy.get_values(np.concatenate(buffer.share_obs[-1]),
-                                                            np.concatenate(buffer.obs[-1]),
-                                                            np.concatenate(buffer.rnn_states_critic[-1]),
-                                                            np.concatenate(buffer.masks[-1]),
-                                                            np.concatenate(buffer.available_actions[-1]),
-                                                            n_objective = self.n_objective)
-            next_values = np.array(np.split(_t2n(next_values), self.n_rollout_threads))
-            buffer.compute_returns(next_values, self.value_normalizer)
+            # if buffer.available_actions is None:
+            #     next_values = self.policy.get_values(np.concatenate(buffer.share_obs[-1]),
+            #                                                 np.concatenate(buffer.obs[-1]),
+            #                                                 np.concatenate(buffer.rnn_states_critic[-1]),
+            #                                                 np.concatenate(buffer.masks[-1]))
+            # else:
+            #     next_values = self.policy.get_values(np.concatenate(buffer.share_obs[-1]),
+            #                                                 np.concatenate(buffer.obs[-1]),
+            #                                                 np.concatenate(buffer.rnn_states_critic[-1]),
+            #                                                 np.concatenate(buffer.masks[-1]),
+            #                                                 np.concatenate(buffer.available_actions[-1]),
+            #                                                 n_objective = self.n_objective)
+            # next_values = np.array(np.split(_t2n(next_values), self.n_rollout_threads))
+            # buffer.compute_returns(next_values, self.value_normalizer)
             advantages_copy = buffer.advantages.copy()
             objective_coefficients_copy = buffer.objective_coefficients.copy()
-            advantages_copy[buffer.active_masks[:-1] == 0.0] = np.nan
+            if buffer.single_dim_advantage:
+                advantages_copy[buffer.active_masks[:-1,:,:,:1] == 0.0] = np.nan
+            else:
+                advantages_copy[buffer.active_masks[:-1] == 0.0] = np.nan
             advantages = np.zeros_like(buffer.advantages)
-            for i in range(self.n_objective):
-                mean_advantages = np.nanmean(advantages_copy[:,:,:,i])
-                std_advantages = np.nanstd(advantages_copy[:,:,:,i])
-                advantages[:,:,:,i] = (buffer.advantages[:,:,:,i] - mean_advantages) / (std_advantages + 1e-5)
-            for row in range(advantages.shape[0]):
-                for col in range(advantages.shape[1]):
-                    advantages[row,col] = advantages[row,col] * objective_coefficients_copy[row,col]
+            if buffer.single_dim_advantage:
+                advantages = normalize_advantage(buffer.advantages, advantages_copy)
+            else:
+                for i in range(self.n_objective):
+                    # mean_advantages = np.nanmean(advantages_copy[:,:,:,i])
+                    # std_advantages = np.nanstd(advantages_copy[:,:,:,i])
+                    # advantages[:,:,:,i] = (buffer.advantages[:,:,:,i] - mean_advantages) / (std_advantages + 1e-5)
+                    advantages[:,:,:,i] = normalize_advantage(buffer.advantages[:,:,:,i], advantages_copy[:,:,:,i])
+            # for row in range(advantages.shape[0]):
+            #     for col in range(advantages.shape[1]):
+            #         advantages[row,col] = advantages[row,col] * objective_coefficients_copy[row,col]
             
             data_generator = buffer.feed_forward_generator_transformer(advantages, self.num_mini_batch)
 
@@ -252,7 +294,10 @@ class DMOMATTrainer:
 
                 for i_objective in range(self.n_objective):
                     train_info['value_loss_{}'.format(i_objective)] += value_losses[i_objective].item()
-                    train_info['policy_loss_{}'.format(i_objective)] += policy_losses[i_objective].item()
+                    if self.single_dim_advantage:
+                        train_info['policy_loss'] += policy_losses[0].item()
+                    else:
+                        train_info['policy_loss_{}'.format(i_objective)] += policy_losses[i_objective].item()
                 train_info['dist_entropy'] += dist_entropy.item()
                 train_info['actor_grad_norm'] += actor_grad_norm
                 train_info['critic_grad_norm'] += critic_grad_norm
