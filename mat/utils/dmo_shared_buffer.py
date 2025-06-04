@@ -52,6 +52,7 @@ class DMOSharedReplayBuffer(object):
         self._use_proper_time_limits = args.use_proper_time_limits
         self.use_advantage_norm = args.use_advantage_norm
         self.algo = args.algorithm_name
+        self.single_dim_advantage = args.single_dim_advantage
         self.num_agents = num_agents
         self.env_name = env_name
         self.n_objective = n_objective
@@ -78,24 +79,28 @@ class DMOSharedReplayBuffer(object):
         self.objectives = np.zeros((self.episode_length, self.n_rollout_threads, num_agents, self.n_objective), dtype=np.float32)
         self.objective_preds = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents,self.n_objective), dtype=np.float32)
         self.returns = np.zeros_like(self.objective_preds)
-        self.advantages = np.zeros((self.episode_length, self.n_rollout_threads, num_agents,self.n_objective), dtype=np.float32)
+        if self.single_dim_advantage:            
+            self.advantages = np.zeros((self.episode_length, self.n_rollout_threads, num_agents,1), dtype=np.float32)
+        else:
+            self.advantages = np.zeros((self.episode_length, self.n_rollout_threads, num_agents,self.n_objective), dtype=np.float32)
         
         
         
 
         # Action Buffer
         if act_space.__class__.__name__ == 'Discrete' or act_space.__class__.__name__ == 'Action_Space' or act_space.__class__.__name__ == 'Available_Continous_Space':
-            self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, act_space.n),
-                                             dtype=np.float32)
+            self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads
+                                            , num_agents, act_space.n),dtype=np.float32)
         else:
             self.available_actions = None
 
-        act_shape = get_shape_from_act_space(act_space)
-
+        act_shape,act_prob_shape = get_shape_from_act_space(act_space)
+        if act_prob_shape is None:
+            act_prob_shape = act_shape
         self.actions = np.zeros(
             (self.episode_length, self.n_rollout_threads, num_agents, act_shape), dtype=np.float32)
         self.action_log_probs = np.zeros(
-            (self.episode_length, self.n_rollout_threads, num_agents, act_shape), dtype=np.float32)
+            (self.episode_length, self.n_rollout_threads, num_agents, act_prob_shape), dtype=np.float32)
         
         
         self.masks = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, self.n_objective), dtype=np.float32)
@@ -229,6 +234,7 @@ class DMOSharedReplayBuffer(object):
         self.masks[0] = self.masks[-1].copy()
         self.bad_masks[0] = self.bad_masks[-1].copy()
 
+
     def compute_returns(self, next_objective_value, value_normalizer=None):
         """
         Compute returns either as discounted sum of rewards, or using GAE.
@@ -236,28 +242,43 @@ class DMOSharedReplayBuffer(object):
         :param value_normalizer: (PopArt) If not None, PopArt value normalizer instance.
         """
         self.objective_preds[-1] = next_objective_value
-        gae = 0
-        # Check Normalize
+        single_gae = 0
+        multi_gae = np.array([0,0])
+        multi_weight_gae = np.array([0,0])
+                        
         for step in reversed(range(self.objectives.shape[0])):
+            objective_agent_coefficients = np.stack([self.objective_coefficients[step]]*self.num_agents,1)
+            objective_agent_coefficients_next = np.stack([self.objective_coefficients[step+1]]*self.num_agents,1)
             if self._use_popart or self._use_valuenorm:
-                if self.use_advantage_norm:
-                    # Use Normalized Advantage Value
-                    delta = value_normalizer.normalize(self.objectives[step]).cpu().numpy() \
-                        + (self.gamma * self.objective_preds[step + 1] * self.masks[step + 1])\
-                        - self.objective_preds[step]
-                else:
-                    # Use Original Advantage Value
-                    delta = self.objectives[step] + self.gamma * value_normalizer.denormalize(
-                    self.objective_preds[step + 1]) * self.masks[step + 1] \
-                        - value_normalizer.denormalize(self.objective_preds[step])
-                    
-                    
                 
-                gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
+                # single_delta = self.objectives[step]*objective_agent_coefficients + (self.gamma * (self.objective_preds[step + 1]*objective_agent_coefficients_next) * self.masks[step + 1])\
+                # - (value_normalizer.denormalize(self.objective_preds[step])*objective_agent_coefficients)
+                # single_delta = np.sum(single_delta,axis=-1, keepdims=True)
+                weighted_objectives = self.objectives[step] * objective_agent_coefficients
+                weighted_objective = np.sum(weighted_objectives, axis=-1, keepdims=True)
+                denorm_preds_next = value_normalizer.denormalize(self.objective_preds[step + 1])
+                weighted_preds_next =  denorm_preds_next* objective_agent_coefficients_next
+                weighted_pred_next = np.sum(weighted_preds_next, axis=-1, keepdims=True)
+                denorm_preds = value_normalizer.denormalize(self.objective_preds[step])
+                weighted_preds = denorm_preds * objective_agent_coefficients
+                weighted_pred = np.sum(weighted_preds, axis=-1, keepdims=True)
+                
+                single_delta = weighted_objective + (self.gamma * weighted_pred_next * self.masks[step + 1,:,:,:1]) - weighted_pred
+                
+                
+                # Use Original Advantage Value
+                multi_delta = self.objectives[step] + self.gamma * denorm_preds_next * self.masks[step + 1] - denorm_preds
+                multi_weight_delta = weighted_objectives + self.gamma * weighted_preds_next * self.masks[step + 1] - weighted_preds
+                
+                
+                    
+                single_gae = single_delta + self.gamma * self.gae_lambda * self.masks[step + 1,:,:,:1] * single_gae
+                multi_gae = multi_delta + self.gamma * self.gae_lambda * self.masks[step + 1] * multi_gae
+                multi_weight_gae = multi_weight_delta + self.gamma * self.gae_lambda * self.masks[step + 1] * multi_weight_gae
                 
                 # here is a patch for mpe, whose last step is timeout instead of terminate
                 if self.env_name == "MPE" and step == self.objectives.shape[0] - 1:
-                    gae = 0
+                    multi_gae = 0
                 # Here is a implementation for weighted gae.
                 # if self.objective_coefficients is not None:
                 #     obj_coefficients = self.objective_coefficients[step]
@@ -266,24 +287,30 @@ class DMOSharedReplayBuffer(object):
                 # else:
                 #     self.advantages[step] = gae
                 # Here is a implementation for normal gae.
-                self.advantages[step] = gae
+                if self.single_dim_advantage:
+                    self.advantages[step] = single_gae
+                else:
+                    self.advantages[step] = multi_weight_gae
                 if value_normalizer.updated:
                     if self.use_advantage_norm:
                         # Original Return with Normalize GAE
-                        self.returns[step] = value_normalizer.denormalize(gae +self.objective_preds[step])
+                        self.returns[step] = value_normalizer.denormalize(multi_gae +self.objective_preds[step])
                     else:
                         # Original Return with Original GAE
-                        self.returns[step] = gae + value_normalizer.denormalize(self.objective_preds[step])           
+                        self.returns[step] = multi_gae + value_normalizer.denormalize(self.objective_preds[step])           
                 else:
                     self.returns[step] = self.objectives[step]
             else:
-                delta = self.objectives[step] + self.gamma * self.objective_preds[step + 1] * \
+                single_delta = self.objectives[step]*objective_agent_coefficients + (self.gamma * (self.objective_preds[step + 1]*objective_agent_coefficients_next) * self.masks[step + 1]) - (self.objective_preds[step]*objective_agent_coefficients)
+                single_delta = np.sum(single_delta,axis=-1, keepdims=True)
+                single_gae = single_delta + self.gamma * self.gae_lambda * self.masks[step + 1,:,:,:1] * single_gae
+                multi_delta = self.objectives[step] + self.gamma * self.objective_preds[step + 1] * \
                         self.masks[step + 1] - self.objective_preds[step]
-                gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
+                multi_gae = multi_delta + self.gamma * self.gae_lambda * self.masks[step + 1] * multi_gae
 
                 # here is a patch for mpe, whose last step is timeout instead of terminate
                 if self.env_name == "MPE" and step == self.objectives.shape[0] - 1:
-                    gae = 0
+                    multi_gae = 0
 
                 # Here is a implementation for weighted gae. 
                 # Due the effect issue, we comments this implementation
@@ -294,8 +321,11 @@ class DMOSharedReplayBuffer(object):
                 # else:
                 #     self.advantages[step] = gae
                 # Here is a implementation for normal gae.
-                self.advantages[step] = gae
-                self.returns[step] = gae + self.objective_preds[step]
+                if self.single_dim_advantage:
+                    self.advantages[step] = single_gae
+                else:   
+                    self.advantages[step] = multi_gae
+                self.returns[step] = multi_gae + self.objective_preds[step]
 
     def feed_forward_generator_transformer(self, advantages, num_mini_batch=None, mini_batch_size=None):
         """
