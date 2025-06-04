@@ -41,13 +41,17 @@ def get_shape_from_obs_space(obs_space):
 def get_shape_from_act_space(act_space):
     if act_space.__class__.__name__ == 'Discrete':
         act_shape = 1
+        act_prob_shape = act_shape
     elif act_space.__class__.__name__ == 'Action_Space':
         if act_space.multi_discrete:
             act_shape = act_space.n
         else:
             act_shape = 1
+        return act_shape, act_shape
     elif act_space.__class__.__name__ == 'Available_Continous_Space':
         act_shape = act_space.shape
+        act_prob_shape = act_space.continuous_dim+1
+        return act_shape, act_prob_shape
     elif act_space.__class__.__name__ == "MultiDiscrete":
         act_shape = act_space.shape
     elif act_space.__class__.__name__ == "Box":
