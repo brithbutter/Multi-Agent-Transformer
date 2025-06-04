@@ -42,10 +42,15 @@ class TransformerPolicy:
         self.share_obs_dim = get_shape_from_obs_space(cent_obs_space)[0]
         if self.action_type == 'Discrete' or self.action_type == 'Semi_Discrete':
             self.act_dim = act_space.n
+            self.act_discrete_dim = self.act_dim
             self.act_num = 1
+            self.act_output_num = self.act_num
+            self.act_prob_dim = self.act_num
         elif self.action_type == "Available_Continous":
             self.act_dim = act_space.shape
-            self.act_num = 1
+            self.act_discrete_dim = act_space.discrete_dim
+            self.act_output_num = self.act_dim
+            self.act_prob_dim = 2
         else:
             print("act high: ", act_space.high)
             self.act_dim = act_space.shape[0]
@@ -109,7 +114,7 @@ class TransformerPolicy:
         update_linear_schedule(self.optimizer, episode, episodes, self.lr)
 
     def get_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, masks, available_actions=None,
-                    deterministic=False,stride = 2,n_objective = 1):
+                    deterministic=False,stride = 1,n_objective = 1):
         """
         Compute actions and value function predictions for the given inputs.
         :param cent_obs (np.ndarray): centralized input to the critic.
@@ -139,8 +144,8 @@ class TransformerPolicy:
                                                                          deterministic,
                                                                          stride=stride)
 
-        actions = actions.view(-1, self.act_num)
-        action_log_probs = action_log_probs.view(-1, self.act_num)
+        actions = actions.view(-1, self.act_output_num)
+        action_log_probs = action_log_probs.view(-1, self.act_prob_dim)
         values = values.view(-1, n_objective)
 
         # unused, just for compatibility
@@ -163,7 +168,7 @@ class TransformerPolicy:
         cent_obs = cent_obs.reshape(-1, self.num_agents, self.share_obs_dim)
         obs = obs.reshape(-1, self.num_agents, self.obs_dim)
         if available_actions is not None:
-            available_actions = available_actions.reshape(-1, self.num_agents, self.act_dim)
+            available_actions = available_actions.reshape(-1, self.num_agents, self.act_discrete_dim)
         if n_objective>1:
             values = self.transformer.get_values(cent_obs, obs, available_actions)
             values = values.view(-1,n_objective)
@@ -193,19 +198,22 @@ class TransformerPolicy:
         """
         cent_obs = cent_obs.reshape(-1, self.num_agents, self.share_obs_dim)
         obs = obs.reshape(-1, self.num_agents, self.obs_dim)
-        actions = actions.reshape(-1, self.num_agents, self.act_num)
+        actions = actions.reshape(-1, self.num_agents, self.act_output_num)
         if available_actions is not None:
             available_actions = available_actions.reshape(-1, self.num_agents, self.act_dim)
 
         action_log_probs, values, entropy = self.transformer(cent_obs, obs, actions, available_actions)
 
-        action_log_probs = action_log_probs.view(-1, self.act_num)
-        entropy = entropy.view(-1, self.act_num)
+        action_log_probs = action_log_probs.view(-1, self.act_prob_dim)
+        entropy = entropy.view(-1, self.act_prob_dim)
         
         values = values.view(-1, n_objective)
 
         if self._use_policy_active_masks and active_masks is not None:
-            entropy = (entropy*active_masks).sum()/active_masks.sum()
+            if entropy.shape[-1] == 1:
+                entropy = (entropy*active_masks).sum()/active_masks.sum()
+            else:
+                entropy = (entropy*active_masks).sum()/(active_masks.sum()*entropy.shape[-1])
         else:
             entropy = entropy.mean()
 
