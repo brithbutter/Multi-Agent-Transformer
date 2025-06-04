@@ -251,7 +251,7 @@ def get_config():
                         help='number of batches for ppo (default: 1)')
     parser.add_argument("--entropy_coef", type=float, default=0.01,
                         help='entropy term coefficient (default: 0.01)')
-    parser.add_argument("--value_loss_coef", type=float,
+    parser.add_argument("--value_loss_coef", nargs='+',type=float,
                         default=1, help='value loss coefficient (default: 0.5)')
     parser.add_argument("--use_max_grad_norm",
                         action='store_false', default=True, help="by default, use max norm of gradients. If set, do not use.")
@@ -298,6 +298,7 @@ def get_config():
 
     # pretrained parameters
     parser.add_argument("--model_dir", type=str, default=None, help="by default None. set the path to pretrained model.")
+    parser.add_argument("--single_dim_advantage", action='store_true', default=False, help="by default, using multi-dim advantage. If set, using single-dim advantage.")
 
 
     # add for transformer
