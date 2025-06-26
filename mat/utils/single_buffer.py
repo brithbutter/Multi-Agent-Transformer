@@ -75,7 +75,7 @@ class SingleReplayBuffer(object):
         else:
             self.available_actions = None
 
-        act_shape = get_shape_from_act_space(act_space)
+        act_shape,act_prob_shape = get_shape_from_act_space(act_space)
         if act_space.__class__.__name__ == 'Action_Space' and act_space.mixed:
             self.actions = np.zeros(
                 (self.episode_length, self.n_rollout_threads, act_space.high - act_space.semi_index), dtype=np.float32)
