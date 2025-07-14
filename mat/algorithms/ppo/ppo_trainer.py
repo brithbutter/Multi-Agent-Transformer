@@ -142,7 +142,7 @@ class PPO():
         self.policy.actor_optimizer.zero_grad()
 
         if update_actor:
-             (policy_loss - dist_entropy * self.entropy_coef).backward()
+            (policy_loss - dist_entropy * self.entropy_coef).backward()
 
         if self._use_max_grad_norm:
             actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)

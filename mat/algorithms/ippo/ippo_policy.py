@@ -36,7 +36,7 @@ class IPPO_Policy:
         #####   and using same update setting. Therefore they have the same parameter,       #####
         #####   you can regard them as the same critic.                                      #####
         ##########################################################################################
-        self.critic = Critic(args, self.share_obs_space, self.device)
+        self.critic = Critic(args, self.obs_space, self.device)
 
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),
                                                 lr=self.lr, eps=self.opti_eps,
@@ -82,10 +82,10 @@ class IPPO_Policy:
                                                                  available_actions,
                                                                  deterministic)
 
-        values, rnn_states_critic = self.critic(cent_obs, rnn_states_critic, masks)
+        values, rnn_states_critic = self.critic(obs, rnn_states_critic, masks)
         return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
 
-    def get_values(self, cent_obs, rnn_states_critic, masks):
+    def get_values(self, obs, rnn_states_critic, masks):
         """
         Get value function predictions.
         :param cent_obs (np.ndarray): centralized input to the critic.
@@ -94,7 +94,7 @@ class IPPO_Policy:
 
         :return values: (torch.Tensor) value function predictions.
         """
-        values, _ = self.critic(cent_obs, rnn_states_critic, masks)
+        values, _ = self.critic(obs, rnn_states_critic, masks)
         return values
 
     def evaluate_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, action, masks,
@@ -125,7 +125,7 @@ class IPPO_Policy:
                                                                 available_actions,
                                                                 active_masks)
 
-        values, _ = self.critic(cent_obs, rnn_states_critic, masks)
+        values, _ = self.critic(obs, rnn_states_critic, masks)
         return values, action_log_probs, dist_entropy
 
 

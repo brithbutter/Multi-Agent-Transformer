@@ -78,8 +78,8 @@ class Runner(object):
                 from mat.algorithms.mat.algorithm.happo_policy import HAPPO_Policy as Policy
             elif self.algorithm_name == "ippo":
                 from mat.utils.single_buffer import SingleReplayBuffer
-                from mat.algorithms.ppo.ppo_trainer import PPO as TrainAlgo
-                from mat.algorithms.ppo.ppo_policy import PPO_Policy as Policy 
+                from mat.algorithms.ippo.ippo_trainer import IPPO as TrainAlgo
+                from mat.algorithms.ippo.ippo_policy import IPPO_Policy as Policy 
             elif self.all_args.algorithm_name == "hatrpo":
                 from mat.algorithms.hatrpo.hatrpo_trainer import HATRPO as TrainAlgo
                 from mat.algorithms.hatrpo.hatrpo_policy import HATRPO_Policy as Policy
@@ -291,8 +291,14 @@ class Runner(object):
                 if self.all_args.algorithm_name == "ippo":
                     factor = np.ones((self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
                     self.buffer[agent_id].update_factor(factor)
+                    if self.all_args.use_cent_local_observe:
+                        value_obs = np.concatenate((self.buffer[agent_id].share_obs[-1],self.buffer[agent_id].obs[-1]),axis=-1)
+                    else:
+                        value_obs = self.buffer[agent_id].obs[-1]
+                else:
+                    value_obs = self.buffer[agent_id].share_obs[-1]
                 self.trainer[agent_id].prep_rollout()
-                next_value = self.trainer[agent_id].policy.get_values(self.buffer[agent_id].share_obs[-1], 
+                next_value = self.trainer[agent_id].policy.get_values(value_obs, 
                                                                     self.buffer[agent_id].rnn_states_critic[-1],
                                                                     self.buffer[agent_id].masks[-1])
                 next_value = _t2n(next_value)
