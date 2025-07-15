@@ -131,7 +131,7 @@ def semi_discrete_parallel_act(decoder, obs_rep, obs, action, batch_size, n_agen
     return action_log, entropy
 
 def discrete_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent, action_dim, tpdv,
-                                available_actions=None, deterministic=False):
+                                available_actions=None, deterministic=False,stride=1):
     shifted_action = torch.zeros((batch_size, n_agent, action_dim + 1)).to(**tpdv)
     shifted_action[:, 0, 0] = 1
     output_action = torch.zeros((batch_size, n_agent, 1), dtype=torch.long)
@@ -155,7 +155,7 @@ def discrete_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent, acti
                     shifted_action[:, i + starting_index, 1:] = F.one_hot(action, num_classes=action_dim)
             if ending_index < n_agent:
                 starting_index = ending_index
-                ending_index +=4
+                ending_index +=stride
                 if ending_index > n_agent:
                     ending_index = n_agent
     else:
