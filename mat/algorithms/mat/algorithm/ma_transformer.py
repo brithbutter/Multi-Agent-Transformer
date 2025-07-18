@@ -312,7 +312,7 @@ class MultiAgentTransformer(nn.Module):
         if self.action_type == "Discrete":
             output_action, output_action_log = discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                             self.n_agent, self.action_dim, self.tpdv,
-                                                                            available_actions, deterministic)
+                                                                            available_actions, deterministic,stride=stride)
         elif self.action_type == "Semi_Discrete":
             output_action, output_action_log = semi_discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                                 self.n_agent, self.action_dim, self.tpdv,
