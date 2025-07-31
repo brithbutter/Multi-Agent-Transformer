@@ -4,7 +4,6 @@ import torch.nn as nn
 from mat.utils.util import get_gard_norm, huber_loss, mse_loss
 from mat.utils.popart import PopArt
 from mat.algorithms.utils.util import check
-
 class HAPPO():
     """
     Trainer class for HAPPO to update policies.
@@ -154,8 +153,7 @@ class HAPPO():
         value_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch)
 
         self.policy.critic_optimizer.zero_grad()
-
-        (value_loss * self.value_loss_coef).backward()
+        (value_loss * self.value_loss_coef[0]).backward()
 
         if self._use_max_grad_norm:
             critic_grad_norm = nn.utils.clip_grad_norm_(self.policy.critic.parameters(), self.max_grad_norm)
