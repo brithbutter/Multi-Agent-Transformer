@@ -1,4 +1,4 @@
-from .distributions import Bernoulli, Categorical, DiagGaussian
+from .distributions import Bernoulli, Categorical, DiagGaussian,MixedCategoricalDiagGaussianDistribution
 import torch
 import torch.nn as nn
 
@@ -14,6 +14,7 @@ class ACTLayer(nn.Module):
         super(ACTLayer, self).__init__()
         self.mixed_action = False
         self.multi_discrete = False
+        self.discrete_continuous = False
         self.action_type = action_space.__class__.__name__
         if action_space.__class__.__name__ == "Discrete": 
             action_dim = action_space.n
@@ -45,6 +46,14 @@ class ACTLayer(nn.Module):
                 self.action_out_type = "DISCRETE"
                 action_dim = action_space.n
                 self.action_out = Categorical(inputs_dim, action_dim, use_orthogonal, gain)
+        elif action_space.__class__.__name__ == "Available_Continous_Space":
+            self.discrete_continuous = True
+            self.action_out_type = "AVAILABLE_CONTINUOUS_ACTION"
+            self.semi_index = action_space.semi_index
+            self.log_std = torch.nn.Parameter(torch.ones(-self.semi_index))
+            # self.countious_action_out = torch.distributions.Normal(inputs_dim, -self.semi_index, use_orthogonal, gain, args)
+            action_dim = action_space.n
+            self.action_out = MixedCategoricalDiagGaussianDistribution(inputs_dim, action_space.discrete_dim,action_space.continuous_dim, use_orthogonal, gain, args)
         elif action_space.__class__.__name__ == "Box":
             action_dim = action_space.shape[0]
             self.action_out = DiagGaussian(inputs_dim, action_dim, use_orthogonal, gain, args)
@@ -112,7 +121,15 @@ class ACTLayer(nn.Module):
 
             actions = torch.cat(actions, -1)
             action_log_probs = torch.cat(action_log_probs, -1)
-        
+        elif self.discrete_continuous:
+
+            discrete_action_distri, continuous_action_distri = self.action_out(x,available_actions)
+            discrete_action = discrete_action_distri.mode() if deterministic else discrete_action_distri.sample() 
+            discrete_action_log_probs = discrete_action_distri.log_probs(discrete_action)
+            continuous_action = continuous_action_distri.mode() if deterministic else continuous_action_distri.sample()
+            continuous_action_log_probs = continuous_action_distri.log_probs(continuous_action)
+            actions = torch.cat([discrete_action, continuous_action],dim=-1)
+            action_log_probs = discrete_action_log_probs + continuous_action_log_probs
         else:
             action_logits = self.action_out(x, available_actions)
             actions = action_logits.mode() if deterministic else action_logits.sample() 
@@ -208,7 +225,14 @@ class ACTLayer(nn.Module):
 
             action_log_probs = torch.cat(action_log_probs, -1) 
             dist_entropy = torch.tensor(dist_entropy).mean()
-        
+        elif self.discrete_continuous:
+            discrete_action_distri, continuous_action_distri = self.action_out(x,available_actions)
+            discrete_action = action[:,:self.action_out.num_discrete_outputs]
+            continuous_action = action[:,self.action_out.num_discrete_outputs:]
+            discrete_action_log_probs = discrete_action_distri.log_probs(discrete_action)
+            continuous_action_log_probs = continuous_action_distri.log_probs(continuous_action)
+            action_log_probs = discrete_action_log_probs + continuous_action_log_probs
+            dist_entropy = discrete_action_distri.entropy().mean() + continuous_action_distri.entropy().mean()
         else:
             action_logits = self.action_out(x, available_actions)
             action_log_probs = action_logits.log_probs(action)
