@@ -27,6 +27,9 @@ def continuous_action(act_mean,action_std,deterministic=False,min=0.01,max=1.0):
     # action = act_mean if deterministic else torch.clamp(distri.sample(), min=min, max=max)
     action = act_mean if deterministic else distri.sample()
     action_log = distri.log_prob(action)
+    if sum(action<=min)>0:
+        action[action<=min] = min
+        action_log[action<=min] = torch.log(distri.cdf(action)[action<=min])
     return action,action_log
 
 def semi_discrete_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent, action_dim, tpdv,
@@ -313,6 +316,10 @@ def available_continuous_parallel_act(decoder, obs_rep, obs, action, batch_size,
     action_std = (torch.sigmoid(decoder.log_std)*NORMAL_STD)[ discrete_dim:]
     function_distri = Normal(logits[:, :, discrete_dim:]+BIAS_MEAN, action_std)
     function_action_log = function_distri.log_prob(function_action)
+    if torch.sum(function_action<=0.01)>0:
+        function_action[function_action<=0.01] = 0.01
+        function_action_log[function_action<=0.01] = torch.log(function_distri.cdf(function_action)[function_action<=0.01])
+        
     function_entropy = function_distri.entropy()
     
     # Generate log_prob normally
