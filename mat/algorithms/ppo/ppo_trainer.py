@@ -153,8 +153,7 @@ class PPO():
         value_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch)
 
         self.policy.critic_optimizer.zero_grad()
-
-        (value_loss * self.value_loss_coef).backward()
+        (value_loss * self.value_loss_coef[0]).backward()
 
         if self._use_max_grad_norm:
             critic_grad_norm = nn.utils.clip_grad_norm_(self.policy.critic.parameters(), self.max_grad_norm)
@@ -174,7 +173,8 @@ class PPO():
         :return train_info: (dict) contains information regarding training update (e.g. loss, grad norms, etc).
         """
         advantages_copy = buffer.advantages.copy()
-        advantages_copy[buffer.active_masks[:-1] == 0.0] = np.nan
+        active_mask_shape = buffer.active_masks.shape
+        advantages_copy[np.broadcast_to(buffer.active_masks[:-1],(active_mask_shape[0]-1,active_mask_shape[1],advantages_copy.shape[-1])) == 0.0] = np.nan
         mean_advantages = np.nanmean(advantages_copy)
         std_advantages = np.nanstd(advantages_copy)
         advantages = (buffer.advantages - mean_advantages) / (std_advantages + 1e-5)

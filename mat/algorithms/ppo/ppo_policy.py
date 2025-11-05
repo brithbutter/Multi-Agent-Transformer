@@ -30,7 +30,7 @@ class PPO_Policy:
         self.act_space = act_space
 
         self.actor = Actor(args, self.obs_space, self.act_space, self.device)
-        self.critic = Critic(args, self.share_obs_space, self.device)
+        self.critic = Critic(args, self.share_obs_space, 1 ,self.device)
 
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),
                                                 lr=self.lr, eps=self.opti_eps,
