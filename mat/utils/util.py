@@ -49,8 +49,12 @@ def get_shape_from_act_space(act_space):
             act_shape = 1
         return act_shape, act_shape
     elif act_space.__class__.__name__ == 'Available_Continous_Space':
-        act_shape = act_space.shape
-        act_prob_shape = act_space.continuous_dim+1
+        if act_space.n_components is None:
+            act_shape = act_space.shape
+            act_prob_shape = act_space.continuous_dim+1
+        else:
+            act_shape = (act_space.shape)*act_space.n_components
+            act_prob_shape = (1)*act_space.n_components
         return act_shape, act_prob_shape
     elif act_space.__class__.__name__ == "MultiDiscrete":
         act_shape = act_space.shape
