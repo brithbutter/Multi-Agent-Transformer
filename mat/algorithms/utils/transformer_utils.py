@@ -48,6 +48,7 @@ class SelfAttention(nn.Module):
         if self.masked:
             att = att.masked_fill(self.mask[:, :, :L, :L] == 0, float('-inf'))
         att = F.softmax(att, dim=-1)
+        # att = F.gumbel_softmax(att,tau=1,hard=False, dim=-1)
 
         y = att @ v  # (B, nh, L, L) x (B, nh, L, hs) -> (B, nh, L, hs)
         y = y.transpose(1, 2).contiguous().view(B, L, D)  # re-assemble all head outputs side by side
