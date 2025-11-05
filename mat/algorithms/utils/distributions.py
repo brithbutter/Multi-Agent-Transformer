@@ -43,7 +43,9 @@ class FixedOneHotCategorical(torch.distributions.OneHotCategorical):
             .unsqueeze(-1)
         )
     def mode(self):
-        return super().mode()
+        probs = self.probs
+        mode = probs.argmax(axis=-1)
+        return torch.nn.functional.one_hot(mode, num_classes=probs.shape[-1]).to(probs)
 # Normal
 class FixedNormal(torch.distributions.Normal):
     def log_probs(self, actions):
@@ -163,6 +165,7 @@ class MixedCategoricalDiagGaussianDistribution(nn.Module):
         self.log_std = torch.nn.Parameter(log_std)
     def forward(self, x, available_actions=None):
         output = self.linear(x)
+        
         discrete_logits = output[:, :self.num_discrete_outputs]
         continuous_mean = output[:, self.num_discrete_outputs:self.num_discrete_outputs+self.num_continuous_outputs]
         if available_actions is not None:
