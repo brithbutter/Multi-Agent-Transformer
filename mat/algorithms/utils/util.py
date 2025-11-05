@@ -16,3 +16,8 @@ def get_clones(module, N):
 def check(input):
     output = torch.from_numpy(input) if type(input) == np.ndarray else input
     return output
+
+def normalize_advantage(adv,adv_copy):
+    mean_advantages = np.nanmean(adv_copy)
+    std_advantages = np.nanstd(adv_copy)
+    return (adv - mean_advantages) / (std_advantages + 1e-5)
