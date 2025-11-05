@@ -123,7 +123,7 @@ class Critic(nn.Module):
     :param cent_obs_space: (gym.Space) (centralized) observation space.
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
-    def __init__(self, args, cent_obs_space, device=torch.device("cpu")):
+    def __init__(self, args, cent_obs_space, value_shape = 1, device=torch.device("cpu")):
         super(Critic, self).__init__()
         self.hidden_size = args.hidden_size
         self._use_orthogonal = args.use_orthogonal
@@ -143,7 +143,7 @@ class Critic(nn.Module):
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0))
 
-        self.v_out = init_(nn.Linear(self.hidden_size, 1))
+        self.v_out = init_(nn.Linear(self.hidden_size, value_shape))
 
         self.to(device)
 
