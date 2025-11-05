@@ -215,7 +215,7 @@ class TransformerPolicy:
             else:
                 entropy = (entropy*active_masks).sum()/(active_masks.sum()*entropy.shape[-1])
         else:
-            entropy = entropy.mean()
+            entropy = entropy.sum(-1).mean()
 
         return values, action_log_probs, entropy
 
