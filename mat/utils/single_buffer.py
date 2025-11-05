@@ -86,6 +86,7 @@ class SingleReplayBuffer(object):
                 (self.episode_length, self.n_rollout_threads, act_shape), dtype=np.float32)
             self.action_log_probs = np.zeros(
                 (self.episode_length, self.n_rollout_threads, act_prob_shape), dtype=np.float32)
+        # TODO: MAKE REWARD COMPATIBLE WITH MULTI-OBJECTIVE
         self.rewards = np.zeros(
             (self.episode_length, self.n_rollout_threads, n_objective), dtype=np.float32)
 
