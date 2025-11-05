@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from mat.utils.util import get_gard_norm, huber_loss, mse_loss
 from mat.utils.valuenorm import ValueNorm
-from mat.algorithms.utils.util import check
+from mat.algorithms.utils.util import check, normalize_advantage
 def _t2n(x):
     """Convert torch tensor to a numpy array."""
     return x.detach().cpu().numpy()
@@ -50,7 +50,23 @@ class MATTrainer:
             self.value_normalizer = ValueNorm(1, device=self.device)
         else:
             self.value_normalizer = None
+    def cal_single_value_loss(self, error_clipped, error_original, active_masks_batch):
+        if self._use_huber_loss:
+            value_loss_clipped = huber_loss(error_clipped, self.huber_delta)
+            value_loss_original = huber_loss(error_original, self.huber_delta)
+        else:
+            value_loss_clipped = mse_loss(error_clipped)
+            value_loss_original = mse_loss(error_original)
+        if self._use_clipped_value_loss:
+            value_loss = torch.max(value_loss_original, value_loss_clipped)
+        else:
+            value_loss = value_loss_original
 
+        if self._use_value_active_masks:
+            value_loss = (value_loss * active_masks_batch).sum() / active_masks_batch.sum()
+        else:
+            value_loss = value_loss.mean()
+        return value_loss
     def cal_value_loss(self, values, value_preds_batch, return_batch, active_masks_batch):
         """
         Calculate value function loss.
@@ -73,23 +89,7 @@ class MATTrainer:
             error_clipped = return_batch - value_pred_clipped
             error_original = return_batch - values
 
-        if self._use_huber_loss:
-            value_loss_clipped = huber_loss(error_clipped, self.huber_delta)
-            value_loss_original = huber_loss(error_original, self.huber_delta)
-        else:
-            value_loss_clipped = mse_loss(error_clipped)
-            value_loss_original = mse_loss(error_original)
-
-        if self._use_clipped_value_loss:
-            value_loss = torch.max(value_loss_original, value_loss_clipped)
-        else:
-            value_loss = value_loss_original
-
-        # if self._use_value_active_masks and not self.dec_actor:
-        if self._use_value_active_masks:
-            value_loss = (value_loss * active_masks_batch).sum() / active_masks_batch.sum()
-        else:
-            value_loss = value_loss.mean()
+        value_loss= self.cal_single_value_loss(error_clipped, error_original, active_masks_batch)
 
         return value_loss
 
@@ -118,15 +118,18 @@ class MATTrainer:
 
         # Reshape to do in a single forward pass for all steps
         values, action_log_probs, dist_entropy = self.policy.evaluate_actions(share_obs_batch,
-                                                                              obs_batch, 
-                                                                              rnn_states_batch, 
-                                                                              rnn_states_critic_batch, 
-                                                                              actions_batch, 
-                                                                              masks_batch, 
-                                                                              available_actions_batch,
-                                                                              active_masks_batch)
+                                                                            obs_batch, 
+                                                                            rnn_states_batch, 
+                                                                            rnn_states_critic_batch, 
+                                                                            actions_batch, 
+                                                                            masks_batch, 
+                                                                            available_actions_batch,
+                                                                            active_masks_batch)
         # actor update
-        imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
+        if action_log_probs.shape[-1] > 1:
+            imp_weights = torch.exp((action_log_probs - old_action_log_probs_batch).sum(-1)).unsqueeze(-1)
+        else:
+            imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
 
         surr1 = imp_weights * adv_targ
         surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
@@ -176,25 +179,9 @@ class MATTrainer:
         train_info['ratio'] = 0
 
         for _ in range(self.ppo_epoch):
-            
-            if buffer.available_actions is None:
-                next_values = self.policy.get_values(np.concatenate(buffer.share_obs[-1]),
-                                                            np.concatenate(buffer.obs[-1]),
-                                                            np.concatenate(buffer.rnn_states_critic[-1]),
-                                                            np.concatenate(buffer.masks[-1]))
-            else:
-                next_values = self.policy.get_values(np.concatenate(buffer.share_obs[-1]),
-                                                            np.concatenate(buffer.obs[-1]),
-                                                            np.concatenate(buffer.rnn_states_critic[-1]),
-                                                            np.concatenate(buffer.masks[-1]),
-                                                            np.concatenate(buffer.available_actions[-1]))
-            next_values = np.array(np.split(_t2n(next_values), self.n_rollout_threads))
-            buffer.compute_returns(next_values, self.value_normalizer)
             advantages_copy = buffer.advantages.copy()
             advantages_copy[buffer.active_masks[:-1] == 0.0] = np.nan
-            mean_advantages = np.nanmean(advantages_copy)
-            std_advantages = np.nanstd(advantages_copy)
-            advantages = (buffer.advantages - mean_advantages) / (std_advantages + 1e-5)
+            advantages = normalize_advantage(buffer.advantages, advantages_copy)
             data_generator = buffer.feed_forward_generator_transformer(advantages, self.num_mini_batch)
 
             for sample in data_generator:
