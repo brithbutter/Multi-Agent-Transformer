@@ -29,7 +29,7 @@ class SingleReplayBuffer(object):
     :param act_space: (gym.Space) action space for agents.
     """
 
-    def __init__(self, args,num_agents, obs_space, cent_obs_space, act_space, env_name, large_model=True):
+    def __init__(self, args,num_agents, obs_space, cent_obs_space, act_space, env_name,n_objective = 1, large_model=True):
         self.episode_length = args.episode_length
         self.n_rollout_threads = args.n_rollout_threads
         self.hidden_size = args.hidden_size
@@ -62,12 +62,12 @@ class SingleReplayBuffer(object):
         self.rnn_states_critic = np.zeros_like(self.rnn_states)
 
         self.value_preds = np.zeros(
-            (self.episode_length + 1, self.n_rollout_threads, 1), dtype=np.float32)
+            (self.episode_length + 1, self.n_rollout_threads, n_objective), dtype=np.float32)
         self.returns = np.zeros_like(self.value_preds)
         self.advantages = np.zeros(
-            (self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
+            (self.episode_length, self.n_rollout_threads, n_objective), dtype=np.float32)
 
-        if act_space.__class__.__name__ == 'Discrete' or act_space.__class__.__name__ == 'Action_Space' :
+        if act_space.__class__.__name__ == 'Discrete' or act_space.__class__.__name__ == 'Action_Space' or act_space.__class__.__name__ == 'Available_Continous_Space':
             if large_model:
                 self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents,act_space.n),dtype=np.float32)
             else:
@@ -85,9 +85,9 @@ class SingleReplayBuffer(object):
             self.actions = np.zeros(
                 (self.episode_length, self.n_rollout_threads, act_shape), dtype=np.float32)
             self.action_log_probs = np.zeros(
-                (self.episode_length, self.n_rollout_threads, act_shape), dtype=np.float32)
+                (self.episode_length, self.n_rollout_threads, act_prob_shape), dtype=np.float32)
         self.rewards = np.zeros(
-            (self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
+            (self.episode_length, self.n_rollout_threads, n_objective), dtype=np.float32)
 
         self.masks = np.ones((self.episode_length + 1, self.n_rollout_threads, 1), dtype=np.float32)
         self.bad_masks = np.ones_like(self.masks)
@@ -120,7 +120,10 @@ class SingleReplayBuffer(object):
         self.actions[self.step] = actions.copy()
         self.action_log_probs[self.step] = action_log_probs.copy()
         self.value_preds[self.step] = value_preds.copy()
-        self.rewards[self.step] = rewards.copy()
+        if len(self.rewards.shape) == len(rewards.shape)+1:
+            self.rewards[self.step] = rewards.copy()
+        else:
+            self.rewards[self.step] = rewards.squeeze(1).copy()
         self.masks[self.step + 1] = masks.copy()
         if bad_masks is not None:
             self.bad_masks[self.step + 1] = bad_masks.copy()
