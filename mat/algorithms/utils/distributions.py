@@ -171,3 +171,31 @@ class MixedCategoricalDiagGaussianDistribution(nn.Module):
         action_std = torch.sigmoid(self.log_std / self.std_x_coef) * self.std_y_coef 
         continuous_action_distri = FixedNormal(continuous_mean, action_std)
         return discrete_action_distri, continuous_action_distri
+class MultiMixedCategoricalDiagGaussianDistribution(nn.Module):
+    def __init__(self, num_inputs, num_discrete_outputs,num_continuous_outputs, n_components,use_orthogonal=True, gain=0.01, args=None):
+        super(MultiMixedCategoricalDiagGaussianDistribution, self).__init__()
+        self.num_discrete_outputs = num_discrete_outputs
+        self.num_continuous_outputs = num_continuous_outputs
+        self.n_components = n_components
+        if args is not None:
+            self.std_x_coef = args.std_x_coef
+            self.std_y_coef = args.std_y_coef
+        else:
+            self.std_x_coef = 1.
+            self.std_y_coef = 0.5 
+        self.linear = init_(nn.Linear(num_inputs, (num_discrete_outputs+num_continuous_outputs)*n_components), use_orthogonal, gain)
+        log_stds = torch.ones(n_components,num_continuous_outputs) * self.std_x_coef
+        self.log_stds = torch.nn.Parameter(log_stds)
+    def forward(self, x, available_actions=None):
+        output = self.linear(x).reshape(x.shape[0],self.n_components,-1)
+        if available_actions is not None:
+            output[available_actions == 0] = -1e10
+        discrete_action_distris = []
+        continuous_action_distris = []
+        for i in range(self.n_components):
+            discrete_logits = output[:, i, :self.num_discrete_outputs]
+            continuous_mean = output[:, i, self.num_discrete_outputs:self.num_discrete_outputs+self.num_continuous_outputs]
+            discrete_action_distris.append(FixedOneHotCategorical(logits=discrete_logits))
+            action_std = torch.sigmoid(self.log_stds[i] / self.std_x_coef) * self.std_y_coef 
+            continuous_action_distris.append(FixedNormal(continuous_mean, action_std))
+        return discrete_action_distris, continuous_action_distris
