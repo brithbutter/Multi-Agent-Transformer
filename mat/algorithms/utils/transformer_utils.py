@@ -10,7 +10,7 @@ def init_(m, gain=0.01, activate=None):
     return init(m, nn.init.orthogonal_, lambda x: nn.init.constant_(x, 0), gain=gain)
 
 class SelfAttention(nn.Module):
-
+    # 4 Neural Networks
     def __init__(self, n_embd, n_head, n_agent, masked=False):
         super(SelfAttention, self).__init__()
 
@@ -60,7 +60,7 @@ class SelfAttention(nn.Module):
 
 class EncodeBlock(nn.Module):
     """ an unassuming Transformer block """
-
+    # 4 + 4 Neural Networks
     def __init__(self, n_embd, n_head, n_agent):
         super(EncodeBlock, self).__init__()
 
@@ -82,6 +82,7 @@ class EncodeBlock(nn.Module):
 
 
 class DecodeBlock(nn.Module):
+    # 5+4+4 Neural Networks
     """ an unassuming Transformer block """
 
     def __init__(self, n_embd, n_head, n_agent):
