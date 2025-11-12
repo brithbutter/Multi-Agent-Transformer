@@ -250,6 +250,7 @@ class Runner(object):
             factor = np.ones((self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
             self.buffer.update_factor(factor)
             next_values = self.trainer.policy.get_values((self.buffer.share_obs[-1]),
+                                                            (self.buffer.obs[-1]),
                                                             (self.buffer.rnn_states_critic[-1]),
                                                             (self.buffer.masks[-1]))
             self.buffer.compute_returns(_t2n(next_values), self.trainer.value_normalizer)

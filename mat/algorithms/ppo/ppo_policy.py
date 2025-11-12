@@ -28,9 +28,12 @@ class PPO_Policy:
             self.obs_space = obs_space
         self.share_obs_space = cent_obs_space
         self.act_space = act_space
-
+        self.critic_with_obs = args.critic_with_obs
         self.actor = Actor(args, self.obs_space, self.act_space, self.device)
-        self.critic = Critic(args, self.share_obs_space, 1 ,self.device)
+        if self.critic_with_obs:
+            self.critic = Critic(args, self.obs_space, args.n_objective ,self.device)
+        else:
+            self.critic = Critic(args, self.share_obs_space, args.n_objective ,self.device)
 
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),
                                                 lr=self.lr, eps=self.opti_eps,
@@ -75,11 +78,13 @@ class PPO_Policy:
                                                                  masks,
                                                                  available_actions,
                                                                  deterministic)
-
-        values, rnn_states_critic = self.critic(cent_obs, rnn_states_critic, masks)
+        if self.critic_with_obs:
+            values, rnn_states_critic = self.critic(obs, rnn_states_critic, masks)
+        else:
+            values, rnn_states_critic = self.critic(cent_obs, rnn_states_critic, masks)
         return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
 
-    def get_values(self, cent_obs, rnn_states_critic, masks):
+    def get_values(self, cent_obs,obs, rnn_states_critic, masks):
         """
         Get value function predictions.
         :param cent_obs (np.ndarray): centralized input to the critic.
@@ -88,7 +93,10 @@ class PPO_Policy:
 
         :return values: (torch.Tensor) value function predictions.
         """
-        values, _ = self.critic(cent_obs, rnn_states_critic, masks)
+        if self.critic_with_obs:
+            values, _ = self.critic(obs, rnn_states_critic, masks)
+        else:
+            values, _ = self.critic(cent_obs, rnn_states_critic, masks)
         return values
 
     def evaluate_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, action, masks,
@@ -118,8 +126,10 @@ class PPO_Policy:
                                                                 masks,
                                                                 available_actions,
                                                                 active_masks)
-
-        values, _ = self.critic(cent_obs, rnn_states_critic, masks)
+        if self.critic_with_obs:
+            values, _ = self.critic(obs, rnn_states_critic, masks)
+        else:
+            values, _ = self.critic(cent_obs, rnn_states_critic, masks)
         return values, action_log_probs, dist_entropy
 
 

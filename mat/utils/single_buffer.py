@@ -251,15 +251,15 @@ class SingleReplayBuffer(object):
         actions = self.actions.reshape(-1, self.actions.shape[-1])
         if self.available_actions is not None:
             available_actions = self.available_actions[:-1].reshape(-1, *self.available_actions.shape[-2:])
-        value_preds = self.value_preds[:-1].reshape(-1, 1)
-        returns = self.returns[:-1].reshape(-1, 1)
+        value_preds = self.value_preds[:-1].reshape(-1, self.value_preds.shape[-1])
+        returns = self.returns[:-1].reshape(-1, self.returns.shape[-1])
         masks = self.masks[:-1].reshape(-1, 1)
         active_masks = self.active_masks[:-1].reshape(-1, 1)
         action_log_probs = self.action_log_probs.reshape(-1, self.action_log_probs.shape[-1])
         if self.factor is not None:
             # factor = self.factor.reshape(-1,1)
             factor = self.factor.reshape(-1, self.factor.shape[-1])
-        advantages = advantages.reshape(-1, 1)
+        advantages = advantages.reshape(-1, advantages.shape[-1])
 
         for indices in sampler:
             # obs size [T+1 N Dim]-->[T N Dim]-->[T*N,Dim]-->[index,Dim]

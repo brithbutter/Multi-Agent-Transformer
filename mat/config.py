@@ -278,7 +278,9 @@ def get_config():
     parser.add_argument("--use_linear_lr_decay", action='store_true',
                         default=False, help='use a linear schedule on the learning rate')
     parser.add_argument("--use_cent_local_observe", action='store_true',
-                        default=False, help='use a linear schedule on the learning rate')
+                        default=False, help='combine cent observation and local observation as input')
+    parser.add_argument("--critic_with_obs", action='store_true',default=False, help='Use obs as input to critic network')
+    
     # save parameters
     parser.add_argument("--save_interval", type=int, default=100, help="time duration between contiunous twice models saving.")
 

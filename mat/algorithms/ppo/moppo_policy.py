@@ -16,9 +16,12 @@ class MOPPO_Policy(PPO_Policy):
             self.obs_space = obs_space
         self.share_obs_space = cent_obs_space
         self.act_space = act_space
-
+        self.critic_with_obs = args.critic_with_obs
         self.actor = Actor(args, self.obs_space, self.act_space, self.device)
-        self.critic = Critic(args, self.share_obs_space, value_shape=n_objective, device=self.device)
+        if self.critic_with_obs:
+            self.critic = Critic(args, self.obs_space, args.n_objective ,self.device)
+        else:
+            self.critic = Critic(args, self.share_obs_space, args.n_objective ,self.device)
 
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),
                                                 lr=self.lr, eps=self.opti_eps,

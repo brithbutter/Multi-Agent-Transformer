@@ -21,6 +21,7 @@ class PPO():
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.policy = policy
 
+        self.n_objective = args.n_objective
         self.clip_param = args.clip_param
         self.ppo_epoch = args.ppo_epoch
         self.num_mini_batch = args.num_mini_batch
@@ -41,7 +42,7 @@ class PPO():
 
         
         if self._use_popart:
-            self.value_normalizer = PopArt(1, device=self.device)
+            self.value_normalizer = PopArt(self.n_objective, device=self.device)
         else:
             self.value_normalizer = None
 
@@ -56,8 +57,7 @@ class PPO():
         :return value_loss: (torch.Tensor) value function loss.
         """
         if self._use_popart:
-            value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,
-                                                                                        self.clip_param)
+            value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,self.clip_param)
             error_clipped = self.value_normalizer(return_batch) - value_pred_clipped
             error_original = self.value_normalizer(return_batch) - values
         else:
