@@ -1,36 +1,12 @@
 import torch
-from torch.distributions import Categorical, Normal, OneHotCategorical
 from torch.nn import functional as F
+from .act import discrete_act, continuous_act
 import time 
 
 NORMAL_STD = 0.3
 BIAS_MEAN = 0.5
 
-def discrete_action(logit,i=1,available_action=None,last=False,deterministic=False, one_hot=False):
-    if last:
-        action = F.one_hot(logit)[1]
-        action_log = torch.zeros_like(action,dtype=torch.float32)
-    else:
-        if available_action is not None:
-            logit[available_action == 0] = -1e2
-            if one_hot:
-                distri = OneHotCategorical(logits=logit)
-                action = distri.mode if deterministic else distri.sample()
-            else:
-                distri = Categorical(logits=logit)
-                action = distri.probs.argmax(dim=-1) if deterministic else distri.sample()
-            action_log = distri.log_prob(action)
-    return action,action_log
 
-def continuous_action(act_mean,action_std,deterministic=False,min=0.01,max=1.0):
-    distri = Normal(act_mean, action_std)
-    # action = act_mean if deterministic else torch.clamp(distri.sample(), min=min, max=max)
-    action = act_mean if deterministic else distri.sample()
-    action_log = distri.log_prob(action)
-    if sum(action<=min)>0:
-        action[action<=min] = min
-        action_log[action<=min] = torch.log(distri.cdf(action)[action<=min])
-    return action,action_log
 
 def semi_discrete_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent, action_dim, tpdv,
                                 available_actions=None, deterministic=False, semi_index = -1,stride = 2):
@@ -51,10 +27,10 @@ def semi_discrete_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent,
                 if i + starting_index < n_agent+semi_index:
                     logit = logits[:,i,:]
                     # Original pass old parameters
-                    # action,action_log = discrete_action(logit=logit,i=i+starting_index,available_actions=available_actions,last=(i+starting_index == n_agent-1),deterministic=deterministic)
+                    # action,action_log = discrete_act(logit=logit,i=i+starting_index,available_actions=available_actions,last=(i+starting_index == n_agent-1),deterministic=deterministic)
                     # Update with no agent index passing
                     available_action = available_actions[:,i+starting_index,:]
-                    action,action_log = discrete_action(logit=logit,i=i+starting_index,available_action=available_action,last=(i+starting_index == n_agent-1),deterministic=deterministic)
+                    action,action_log = discrete_act(logit=logit,i=i+starting_index,available_action=available_action,last=(i+starting_index == n_agent-1),deterministic=deterministic)
                     output_action[:, i+starting_index, :] = action.unsqueeze(-1)
                     output_action_log[:, i+starting_index, :] = action_log.unsqueeze(-1)
                     if i + 1 < n_agent:
@@ -62,7 +38,7 @@ def semi_discrete_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent,
                 else:
                     act_mean = logits[:,i,:] 
                     action_std = torch.sigmoid(decoder.log_std) * NORMAL_STD
-                    action,action_log = continuous_action(act_mean=act_mean,action_std=action_std,deterministic=deterministic)
+                    action,action_log = continuous_act(act_mean=act_mean,action_std=action_std,deterministic=deterministic)
                     output_action[:, i+starting_index, :] = action[:,1].reshape(-1,1)
                     output_action_log[:, i+starting_index, :] = action_log[:,1].reshape(-1,1)
                     if i +starting_index+ 1 < n_agent:
@@ -86,7 +62,7 @@ def semi_discrete_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent,
                 logit = decoder(shifted_action, obs_rep, obs)[:, i, :]
                 available_action = available_actions[:,i,:]
                 # decod_time = time.time() - start_time
-                action,action_log = discrete_action(logit=logit,i=i,available_action=available_action,last=(i == n_agent-1),deterministic=deterministic)
+                action,action_log = discrete_act(logit=logit,i=i,available_action=available_action,last=(i == n_agent-1),deterministic=deterministic)
                 # covert_time = time.time() - start_time
                 # print("decode time: ",decod_time,"convert_time",covert_time)
                 output_action[:, i, :] = action.unsqueeze(-1)
@@ -96,7 +72,7 @@ def semi_discrete_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent,
             else:
                 act_mean = decoder(shifted_action, obs_rep, obs)[:, i, :] 
                 action_std = torch.sigmoid(decoder.log_std) * NORMAL_STD
-                action,action_log = continuous_action(act_mean=act_mean,action_std=action_std,deterministic=deterministic)
+                action,action_log = continuous_act(act_mean=act_mean,action_std=action_std,deterministic=deterministic)
                 output_action[:, i, :] = action[:,1].reshape(-1,1)
                 output_action_log[:, i, :] = action_log[:,1].reshape(-1,1)
                 if i + 1 < n_agent:
@@ -151,7 +127,7 @@ def discrete_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent, acti
             for i in range(ending_index - starting_index):
                 logit = logits[:,i,:]
                 available_action = available_actions[:,i+starting_index,:]
-                action,action_log = discrete_action(logit=logit,i=i+starting_index,available_action=available_action,last=False,deterministic=deterministic)
+                action,action_log = discrete_act(logit=logit,i=i+starting_index,available_action=available_action,last=False,deterministic=deterministic)
                 output_action[:, i+starting_index, :] = action.unsqueeze(-1)
                 output_action_log[:, i+starting_index, :] = action_log.unsqueeze(-1)
                 if i + 1 < n_agent:
@@ -265,8 +241,8 @@ def available_continuous_autoregreesive_act(decoder, obs_rep, obs, batch_size, n
         #function_action_log = function_distri.log_prob(function_action)
         # ================
         available_action = available_actions[:,i,:discrete_dim]
-        ava_action , ava_action_log = discrete_action(logit=ava_logit,i=i,available_action=available_action,last=False,deterministic=deterministic,one_hot=True)
-        function_action, function_action_log = continuous_action(act_mean=act_mean+BIAS_MEAN, action_std=action_std,deterministic=deterministic)
+        ava_action , ava_action_log = discrete_act(logit=ava_logit,i=i,available_action=available_action,last=False,deterministic=deterministic,one_hot=True)
+        function_action, function_action_log = continuous_act(act_mean=act_mean+BIAS_MEAN, action_std=action_std,deterministic=deterministic)
         
         action = torch.concat((ava_action,function_action),dim=-1)
         action_log = torch.concat((ava_action_log.reshape(ava_action.shape[0],-1), function_action_log),dim=-1)
