@@ -35,7 +35,7 @@ class Actor(nn.Module):
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
 
-        self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain, args)
+        self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain, args,device)
 
         self.to(device)
 
