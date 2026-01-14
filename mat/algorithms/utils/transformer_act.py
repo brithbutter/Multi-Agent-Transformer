@@ -1,6 +1,6 @@
 import torch
 from torch.nn import functional as F
-from .act import discrete_act, continuous_act
+from .act import discrete_act, continuous_act, evaluate_continuous_action,evaluate_discrete_action
 import time 
 
 NORMAL_STD = 0.3
@@ -94,7 +94,7 @@ def semi_discrete_parallel_act(decoder, obs_rep, obs, action, batch_size, n_agen
     logit = logit[:,:semi_index,:] 
     if available_actions is not None:
         logit[available_actions[:,:semi_index,:] == 0] = -1e10
-        
+    
     distri = Categorical(logits=logit)
     action_log_prev = distri.log_prob(action[:,:semi_index,:].squeeze(-1)).unsqueeze(-1)
     entropy_prev = distri.entropy().unsqueeze(-1)
@@ -274,7 +274,7 @@ def available_continuous_parallel_act(decoder, obs_rep, obs, action, batch_size,
     logits = decoder(shifted_action, obs_rep, obs)
     
     if available_actions is not None:
-        logits[available_actions == 0] = -1e2
+        logits[available_actions == 0] = -1e10
     
     
     
@@ -285,23 +285,19 @@ def available_continuous_parallel_act(decoder, obs_rep, obs, action, batch_size,
 
     # Change available_actions to t \times a \times 3
     # o_hot_distri = OneHotCategorical(logits=logits[:, :, :discrete_dim])
-    ava_distri = Categorical(logits=logits[:, :, :discrete_dim])
-    ava_action_log = ava_distri.log_prob(torch.argmax(ava_action,dim=-1).squeeze(-1)).unsqueeze(-1)
-    ava_entropy = ava_distri.entropy().unsqueeze(-1)
+    ava_action_log, ava_entropy = evaluate_discrete_action(logits[:, :, :discrete_dim],ava_action,one_hot=True)
+    # ava_distri = Categorical(logits=)
+    # ava_action_log = ava_distri.log_prob(torch.argmax(ava_action,dim=-1).squeeze(-1)).unsqueeze(-1)
+    # ava_entropy = ava_distri.entropy().unsqueeze(-1)
     
     action_std = (torch.sigmoid(decoder.log_std)*NORMAL_STD)[ discrete_dim:]
-    function_distri = Normal(logits[:, :, discrete_dim:]+BIAS_MEAN, action_std)
-    function_action_log = function_distri.log_prob(function_action)
-    if torch.sum(function_action<=0.01)>0:
-        function_action[function_action<=0.01] = 0.01
-        function_action_log[function_action<=0.01] = torch.log(function_distri.cdf(function_action)[function_action<=0.01])
-        
-    function_entropy = function_distri.entropy()
+    function_action_log,function_entropy = evaluate_continuous_action(logits[:, :, discrete_dim:]+BIAS_MEAN,function_action,action_std,0.01,1)
+    # function_action_log = function_distri.log_prob(function_action)
     
     # Generate log_prob normally
     action_log = torch.cat((ava_action_log, function_action_log), dim=-1)
     # Setting log_prob to extremely small negative value to present the low prob of generated action
     # if available_actions is not None:
         # action_log[available_actions == 0] = -1e10
-    entropy = torch.cat((ava_entropy, function_entropy), dim=-1)
+    entropy = torch.cat((ava_entropy.unsqueeze(-1), function_entropy), dim=-1)
     return action_log, entropy

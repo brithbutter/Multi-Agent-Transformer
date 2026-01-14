@@ -6,10 +6,10 @@ import torch.nn as nn
 CONTINUOUS_FACTOR = 1
 def continuous_action_clip(action,distri,min=0.01,max=1.0):
     action_log = distri.log_prob(action)
-    if sum(action<=min)>0:
+    if torch.sum(action<=min)>0:
         action[action<=min] = min
         action_log[action<=min] = torch.log(distri.cdf(action)[action<=min])
-    if sum(action>=max)>0:
+    if torch.sum(action>=max)>0:
         action[action>=max] = max
         action_log[action>=max] = torch.log(1.0 - distri.cdf(action)[action>=max])
     return action, action_log
@@ -19,7 +19,7 @@ def discrete_act(logit,i=1,available_action=None,last=False,deterministic=False,
         action_log = torch.zeros_like(action,dtype=torch.float32)
     else:
         if available_action is not None:
-            logit[available_action == 0] = -1e2
+            logit[available_action == 0] = -1e10
         if one_hot:
             distri = OneHotCategorical(logits=logit)
             action = distri.mode if deterministic else distri.sample()
@@ -29,13 +29,13 @@ def discrete_act(logit,i=1,available_action=None,last=False,deterministic=False,
             action = action.unsqueeze(-1)
         action_log = distri.log_prob(action).unsqueeze(-1)
     return action,action_log
-def evaluate_discrete_action(logit,action,one_hot=False):
+def evaluate_discrete_action(logit,action,one_hot=False,return_mean = False):
     if one_hot:
         distri = OneHotCategorical(logits=logit)
     else:
         distri = Categorical(logits=logit)
     action_log = distri.log_prob(action).unsqueeze(-1)
-    entrop = distri.entropy().mean()
+    entrop = distri.entropy()
     return action_log,entrop
 
 def continuous_act(act_mean,action_std,deterministic=False,min=0.01,max=1.0):
@@ -47,7 +47,7 @@ def continuous_act(act_mean,action_std,deterministic=False,min=0.01,max=1.0):
 def evaluate_continuous_action(act_mean,action,action_std,min=0.01,max=1.0):
     distri = Normal(act_mean, action_std)
     action, action_log= continuous_action_clip(action,distri,min=min,max=max)
-    entrop = distri.entropy().mean()
+    entrop = distri.entropy()
     return action_log,entrop
 
 class ACTLayer(nn.Module):
@@ -324,8 +324,10 @@ class ACTLayer(nn.Module):
                     discrete_action = actions[:, i, :self.action_space.discrete_dim]
                     continuous_action = actions[:, i, self.action_space.discrete_dim:]
                     discrete_action_log_prob, discrete_entropy = evaluate_discrete_action(logit=logits[:,i,:self.action_space.discrete_dim],action=discrete_action,one_hot=True)
+                    discrete_entropy = discrete_entropy.mean()
                     continuous_action_log_prob, continuous_entropy = evaluate_continuous_action(act_mean=logits[:,i,self.action_space.discrete_dim:],action=continuous_action,action_std=(self.log_stds[i]/self.std_x_coef)*self.std_y_coef)
                     action_log_prob = discrete_action_log_prob + continuous_action_log_prob 
+                    continuous_entropy = continuous_entropy.mean()
                     if i==0:
                         action_log_probs = action_log_prob
                         dist_entropy = discrete_entropy+ continuous_entropy
