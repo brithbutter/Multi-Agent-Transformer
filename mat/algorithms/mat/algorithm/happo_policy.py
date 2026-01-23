@@ -36,7 +36,7 @@ class HAPPO_Policy:
         #####   and using same update setting. Therefore they have the same parameter,       #####
         #####   you can regard them as the same critic.                                      #####
         ##########################################################################################
-        self.critic = Critic(args, self.share_obs_space, self.device)
+        self.critic = Critic(args, self.share_obs_space, device = self.device)
 
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),
                                                 lr=self.lr, eps=self.opti_eps,

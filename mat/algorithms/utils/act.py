@@ -111,10 +111,12 @@ class ACTLayer(nn.Module):
             action_dim = action_space.n
             self.action_dims = action_space.discrete_dim + action_space.continuous_dim
             self.n_components = action_space.n_components
-            self.log_stds = torch.ones(self.n_components,self.action_space.continuous_dim).to(**self.tpdv)
-            if action_space.n_components is None:
+            
+            if self.n_components is None:
+                self.log_std = torch.nn.Parameter(torch.ones(1))
                 self.action_out = MixedCategoricalDiagGaussianDistribution(inputs_dim, action_space.discrete_dim,action_space.continuous_dim, use_orthogonal, gain, args)
             else:
+                self.log_stds = torch.ones(self.n_components,self.action_space.continuous_dim).to(**self.tpdv)
                 # self.action_out = MultiMixedCategoricalDiagGaussianDistribution(inputs_dim, action_space.discrete_dim,action_space.continuous_dim,action_space.n_components, use_orthogonal, gain, args)
                 self.action_out = init_(nn.Linear(inputs_dim, (action_space.discrete_dim+action_space.continuous_dim)*action_space.n_components), use_orthogonal, gain)
         elif action_space.__class__.__name__ == "Box":
