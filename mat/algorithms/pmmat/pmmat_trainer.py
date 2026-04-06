@@ -8,7 +8,7 @@ def _t2n(x):
     """Convert torch tensor to a numpy array."""
     return x.detach().cpu().numpy()
 
-class DMOMATTrainer:
+class PMMATTrainer:
     """
     Trainer class for MAT to update policies.
     :param args: (argparse.Namespace) arguments containing relevant model, policy, and env information.
@@ -106,7 +106,7 @@ class DMOMATTrainer:
             single_value_loss = self.cal_single_value_loss(single_error_clipped, single_error_original, active_masks_batch[:,:1])
             return value_losses,single_value_loss
 
-    def ppo_update(self, sample):
+    def ppo_update(self, sample,log_flops=False):
         """
         Update actor and critic networks.
         :param sample: (Tuple) contains data batch with which to update networks.
@@ -199,7 +199,12 @@ class DMOMATTrainer:
         # loss = value_loss * self.value_loss_coef
 
         self.policy.optimizer.zero_grad()
-        loss.backward()
+        if log_flops:
+            from torch.utils.flop_counter import FlopCounterMode
+            with FlopCounterMode():
+                loss.backward()
+        else:
+            loss.backward()
 
         if self._use_max_grad_norm:
             grad_norm = nn.utils.clip_grad_norm_(self.policy.transformer.parameters(), self.max_grad_norm)
@@ -210,7 +215,7 @@ class DMOMATTrainer:
 
         return value_losses, grad_norm, policy_losses, dist_entropy, grad_norm, imp_weights
 
-    def train(self, buffer):
+    def train(self, buffer,log_flops=False):
         """
         Perform a training update using minibatch GD.
         :param buffer: (SharedReplayBuffer) buffer containing training data.
@@ -257,7 +262,7 @@ class DMOMATTrainer:
             for sample in data_generator:
 
                 value_losses, critic_grad_norm, policy_losses, dist_entropy, actor_grad_norm, imp_weights \
-                    = self.ppo_update(sample)
+                    = self.ppo_update(sample,log_flops)
 
                 for i_objective in range(self.n_objective):
                     train_info['value_loss_{}'.format(i_objective)] += value_losses[i_objective].item()

@@ -3,10 +3,10 @@ import torch.nn as nn
 from mat_src.mat.algorithms.utils.transformer_utils import init_, EncodeBlock
 
 OPTION_MULTI_OBJECTIVE_APPROACH = 1
-class DMOEncoder(nn.Module):
+class PMEncoder(nn.Module):
 
     def __init__(self, state_dim, obs_dim, n_block, n_embd, n_head, n_agent, encode_state,n_objective = 2,multi_objective_approach=OPTION_MULTI_OBJECTIVE_APPROACH):
-        super(DMOEncoder, self).__init__()
+        super(PMEncoder, self).__init__()
 
         self.state_dim = state_dim
         self.obs_dim = obs_dim

@@ -176,9 +176,9 @@ class Runner(object):
                 from mat.utils.mo_shared_buffer import MOSharedReplayBuffer as SharedReplayBuffer
                 from mat.algorithms.momat.momat_trainer import MOMATTrainer as TrainAlgo
                 from mat.algorithms.mat.algorithm.transformer_policy import TransformerPolicy as Policy
-            elif self.all_args.algorithm_name == "dmomat":
+            elif self.all_args.algorithm_name == "pmmat":
                 from mat.utils.dmo_shared_buffer import DMOSharedReplayBuffer as SharedReplayBuffer
-                from mat.algorithms.dmomat.dmomat_trainer import DMOMATTrainer as TrainAlgo
+                from mat.algorithms.pmmat.pmmat_trainer import PMMATTrainer as TrainAlgo
                 from mat.algorithms.mat.algorithm.transformer_policy import TransformerPolicy as Policy
             # policy network
             self.policy = Policy(self.all_args,
@@ -271,7 +271,7 @@ class Runner(object):
             next_values = np.array(np.split(_t2n(next_values), self.n_rollout_threads))
             self.buffer.compute_returns(next_values, self.trainer.value_normalizer)
     
-    def train(self):
+    def train(self,log_flops = False):
         """Train policies with data in buffer. """
         if self.all_args.algorithm_name in decent_models:
             if self.all_args.algorithm_name == "ippo":
@@ -380,7 +380,7 @@ class Runner(object):
             # Impolemented for ppo, mat, momat
             self.trainer.prep_training()
             # self.buffer.save()
-            train_infos = self.trainer.train(self.buffer)      
+            train_infos = self.trainer.train(self.buffer,log_flops = log_flops)      
             self.buffer.after_update()
             return train_infos
 
