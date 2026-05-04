@@ -71,9 +71,9 @@ class FixedBernoulli(torch.distributions.Bernoulli):
         return torch.gt(self.probs, 0.5).float()
 
 
-class Categorical(nn.Module):
+class CategoricalAction(nn.Module):
     def __init__(self, num_inputs, num_outputs, use_orthogonal=True, gain=0.01):
-        super(Categorical, self).__init__()
+        super(CategoricalAction, self).__init__()
 
         self.linear = init_(nn.Linear(num_inputs, num_outputs), use_orthogonal, gain)
 

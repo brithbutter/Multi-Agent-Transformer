@@ -1,4 +1,4 @@
-from .distributions import Bernoulli, Categorical, DiagGaussian,MixedCategoricalDiagGaussianDistribution,MultiMixedCategoricalDiagGaussianDistribution
+from .distributions import Bernoulli, CategoricalAction, DiagGaussian,MixedCategoricalDiagGaussianDistribution,MultiMixedCategoricalDiagGaussianDistribution
 from .distributions import init_
 from torch.distributions import Categorical, Normal, OneHotCategorical
 import torch
@@ -74,7 +74,7 @@ class ACTLayer(nn.Module):
             self.std_y_coef = 0.5 
         if action_space.__class__.__name__ == "Discrete": 
             action_dim = action_space.n
-            self.action_out = Categorical(inputs_dim, action_dim, use_orthogonal, gain)
+            self.action_out = CategoricalAction(inputs_dim, action_dim, use_orthogonal, gain)
         elif action_space.__class__.__name__ == "Action_Space":
             self.action_out_type = None
             if action_space.mixed:
@@ -96,12 +96,12 @@ class ACTLayer(nn.Module):
                 action_dims = action_space.high - action_space.low
                 self.action_outs = []
                 for action_dim in action_dims:
-                    self.action_outs.append(Categorical(inputs_dim, action_dim, use_orthogonal, gain))
+                    self.action_outs.append(CategoricalAction(inputs_dim, action_dim, use_orthogonal, gain))
                 self.action_outs = nn.ModuleList(self.action_outs)
             else:
                 self.action_out_type = "DISCRETE"
                 action_dim = action_space.n
-                self.action_out = Categorical(inputs_dim, action_dim, use_orthogonal, gain)
+                self.action_out = CategoricalAction(inputs_dim, action_dim, use_orthogonal, gain)
         elif action_space.__class__.__name__ == "Available_Continous_Space":
             self.discrete_continuous = True
             self.action_out_type = "AVAILABLE_CONTINUOUS_ACTION"
@@ -131,14 +131,14 @@ class ACTLayer(nn.Module):
             self.action_outs = []
             for action_dim in action_dims:
                 
-                self.action_outs.append(Categorical(inputs_dim, action_dim, use_orthogonal, gain))
+                self.action_outs.append(CategoricalAction(inputs_dim, action_dim, use_orthogonal, gain))
             self.action_outs = nn.ModuleList(self.action_outs)
         else:  # discrete + continous
             self.mixed_action = True
             continous_dim = action_space[0].shape[0]
             discrete_dim = action_space[1].n
             self.action_outs = nn.ModuleList([DiagGaussian(inputs_dim, continous_dim, use_orthogonal, gain, args),
-                                              Categorical(inputs_dim, discrete_dim, use_orthogonal, gain)])
+                                              CategoricalAction(inputs_dim, discrete_dim, use_orthogonal, gain)])
             
     
     def forward(self, x, available_actions=None, deterministic=False):

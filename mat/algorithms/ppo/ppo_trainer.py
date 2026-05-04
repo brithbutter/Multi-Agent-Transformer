@@ -164,7 +164,7 @@ class PPO():
 
         return value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights
 
-    def train(self, buffer, update_actor=True):
+    def train(self, buffer, update_actor=True,log_flops=False):
         """
         Perform a training update using minibatch GD.
         :param buffer: (SharedReplayBuffer) buffer containing training data.
